@@ -3,6 +3,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using DockerRegistry.Models;
 using Microsoft.Rest;
 using Microsoft.Rest.Serialization;
 using Newtonsoft.Json;
@@ -64,10 +65,7 @@ namespace DockerRegistry
         internal Task<HttpOperationResponse<T>> SendRequestAsync<T>(HttpRequestMessage request, CancellationToken cancellationToken = default) =>
             this.SendRequestAsync<T>(request, null, cancellationToken);
 
-        internal Task<HttpOperationResponse<T>> SendRequestAsync<T>(HttpRequestMessage request, Func<HttpResponseMessage, string, T> getResult, CancellationToken cancellationToken = default) =>
-            this.SendRequestAsync(request, getResult, HttpMethod.Get, cancellationToken);
-
-        internal async Task<HttpOperationResponse<T>> SendRequestAsync<T>(HttpRequestMessage request, Func<HttpResponseMessage, string, T> getResult, HttpMethod method, CancellationToken cancellationToken = default)
+        internal async Task<HttpOperationResponse<T>> SendRequestAsync<T>(HttpRequestMessage request, Func<HttpResponseMessage, string, T> getResult, CancellationToken cancellationToken = default)
         {
             if (this.credentials != null)
             {
@@ -77,15 +75,28 @@ namespace DockerRegistry
 
             cancellationToken.ThrowIfCancellationRequested();
             HttpResponseMessage response = await this.HttpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                string requestContent = await request.Content.ReadAsStringAsync().ConfigureAwait(false);
+                string errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                ErrorResult errorResult = SafeJsonConvert.DeserializeObject<ErrorResult>(errorContent);
+
+                throw new DockerRegistryException(
+                    $"Response status code does not indicate success: {response.StatusCode}. See {nameof(DockerRegistryException.Errors)} property for more detail. ({response.ReasonPhrase})")
+                {
+                    Errors = errorResult.Errors,
+                    Body = errorContent,
+                    Request = new HttpRequestMessageWrapper(request, requestContent),
+                    Response = new HttpResponseMessageWrapper(response, errorContent)
+                };
+            }
             response.EnsureSuccessStatusCode();
 
             cancellationToken.ThrowIfCancellationRequested();
             string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-            if (getResult is null)
-            {
-                getResult = GetResult<T>;
-            }
+            getResult = getResult ?? GetResult<T>;
 
             try
             {

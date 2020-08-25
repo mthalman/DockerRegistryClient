@@ -5,6 +5,6 @@ namespace DockerRegistry.Models
     public abstract class Manifest
     {
         [JsonProperty("schemaVersion")]
-        public string SchemaVersion { get; set; }
+        public int SchemaVersion { get; set; }
     }
 }

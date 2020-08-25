@@ -2,6 +2,7 @@
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using DockerRegistry.Models;
@@ -21,21 +22,20 @@ namespace DockerRegistry
             this.Client = client;
         }
 
-        public Task<HttpOperationResponse<ManifestInfo>> GetWithHttpMessagesAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default)
-        {
-            Uri requestUri = new Uri(this.Client.BaseUri.AbsoluteUri + $"v2/{repositoryName}/manifests/{tagOrDigest}");
-            return this.Client.SendRequestAsync(CreateGetRequestMessage(requestUri, HttpMethod.Get), GetResult, cancellationToken);
-        }
+        public Task<HttpOperationResponse<ManifestInfo>> GetWithHttpMessagesAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default) =>
+            this.Client.SendRequestAsync(
+                CreateGetRequestMessage(GetManifestUri(repositoryName, tagOrDigest), HttpMethod.Get),
+                GetResult,
+                cancellationToken);
 
-        public Task<HttpOperationResponse<string>> GetDigestWithHttpMessagesAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default)
-        {
-            Uri requestUri = new Uri(this.Client.BaseUri.AbsoluteUri + $"v2/{repositoryName}/manifests/{tagOrDigest}");
-
-            return this.Client.SendRequestAsync(
-                CreateGetRequestMessage(requestUri, HttpMethod.Head),
+        public Task<HttpOperationResponse<string>> GetDigestWithHttpMessagesAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default) =>
+            this.Client.SendRequestAsync(
+                CreateGetRequestMessage(GetManifestUri(repositoryName, tagOrDigest), HttpMethod.Head),
                 (response, content) => GetDigest(response),
                 cancellationToken);
-        }
+
+        private Uri GetManifestUri(string repositoryName, string tagOrDigest) =>
+            new Uri(this.Client.BaseUri.AbsoluteUri + $"v2/{repositoryName}/manifests/{tagOrDigest}");
 
         private static HttpRequestMessage CreateGetRequestMessage(Uri requestUri, HttpMethod method)
         {

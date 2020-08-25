@@ -38,13 +38,12 @@ namespace DockerRegistry
 
         private async Task<HttpRequestMessage> GetAuthenticatedRequestAsync(HttpResponseMessage response, HttpRequestMessage request, CancellationToken cancellationToken = default)
         {
-            var authToken = await GetOAuthTokenAsync(response, cancellationToken).ConfigureAwait(false);
+            var authToken = await GetOAuthTokenAsync(response, request, cancellationToken).ConfigureAwait(false);
             request.Headers.Authorization = new AuthenticationHeaderValue(HttpBearerChallenge.Bearer, authToken.Token);
-
             return request;
         }
 
-        private async Task<OAuthToken> GetOAuthTokenAsync(HttpResponseMessage response, CancellationToken cancellationToken = default)
+        private async Task<OAuthToken> GetOAuthTokenAsync(HttpResponseMessage response, HttpRequestMessage unauthorizedRequest, CancellationToken cancellationToken = default)
         {
             AuthenticationHeaderValue bearerHeader = response.Headers.WwwAuthenticate
                 .AsEnumerable()
@@ -59,6 +58,7 @@ namespace DockerRegistry
 
             Uri authenticateUri = new Uri($"{challenge.Realm}?service={challenge.Service}&scope={challenge.Scope}");
             HttpRequestMessage authenticateRequest = new HttpRequestMessage(HttpMethod.Get, authenticateUri);
+            authenticateRequest.Headers.Authorization = unauthorizedRequest.Headers.Authorization;
 
             cancellationToken.ThrowIfCancellationRequested();
             response = await base.SendAsync(authenticateRequest, cancellationToken).ConfigureAwait(false);

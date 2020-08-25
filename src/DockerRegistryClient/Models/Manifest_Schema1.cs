@@ -4,6 +4,11 @@ namespace DockerRegistry.Models
 {
     public class Manifest_Schema1 : Manifest
     {
+        public Manifest_Schema1()
+        {
+            SchemaVersion = 1;
+        }
+
         /// <summary>
         /// Architecture is the host architecture on which this image is intended to run. This is for information purposes and not currently used by the engine.
         /// </summary>

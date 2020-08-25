@@ -1,5 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 namespace DockerRegistry
 {
@@ -9,6 +9,9 @@ namespace DockerRegistry
         private const string ScopeParameter = "scope";
         private const string RealmParameter = "realm";
         public const string Bearer = "Bearer";
+
+        private static readonly Regex BearerRegex = new Regex(
+            $"(realm=\"(?<{RealmParameter}>.+?)\"|service=\"(?<{ServiceParameter}>.+?)\"|scope=\"(?<{ScopeParameter}>.+?)\")");
 
         public string Realm { get; }
         public string Service { get; }
@@ -28,66 +31,36 @@ namespace DockerRegistry
                 return null;
             }
 
-            var parameters = GetChallengeParameters(challenge);
+            var matches = BearerRegex.Matches(challenge);
+
             string realm = null;
             string service = null;
             string scope = null;
 
-            if (parameters.ContainsKey(RealmParameter))
+            foreach (Match match in matches)
             {
-                realm = parameters[RealmParameter];
-            }
-
-            if (parameters.ContainsKey(ServiceParameter))
-            {
-                service = parameters[ServiceParameter];
-            }
-
-            if (parameters.ContainsKey(ScopeParameter))
-            {
-                scope = parameters[ScopeParameter];
+                realm = realm ?? GetGroupValue(match, RealmParameter);
+                service = service ?? GetGroupValue(match, ServiceParameter);
+                scope = scope ?? GetGroupValue(match, ScopeParameter);
             }
 
             return new HttpBearerChallenge(realm, service, scope);
         }
 
+        private static string GetGroupValue(Match match, string groupName)
+        {
+            Group group = match.Groups[groupName];
+            return group.Success ? group.Value : null;
+        }
+
         private static bool ValidateChallenge(string challenge)
         {
-            if (String.IsNullOrEmpty(challenge))
+            if (String.IsNullOrEmpty(challenge) && BearerRegex.IsMatch(challenge))
             {
                 return false;
             }
 
             return true;
-        }
-
-        private static Dictionary<string, string> GetChallengeParameters(string challenge)
-        {
-            challenge = challenge.Trim();
-
-            Dictionary<string, string> parameters = new Dictionary<string, string>();
-            string[] keyValuePairs = challenge.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-
-            if (keyValuePairs != null && keyValuePairs.Length > 0)
-            {
-                for (int i = 0; i < keyValuePairs.Length; i++)
-                {
-                    string[] keyValuePair = keyValuePairs[i].Split('=');
-
-                    if (keyValuePair.Length == 2)
-                    {
-                        string key = keyValuePair[0].Trim().Trim('"');
-                        string value = keyValuePair[1].Trim().Trim('"');
-
-                        if (!string.IsNullOrEmpty(key))
-                        {
-                            parameters[key] = value;
-                        }
-                    }
-                }
-            }
-
-            return parameters;
         }
     }
 }
