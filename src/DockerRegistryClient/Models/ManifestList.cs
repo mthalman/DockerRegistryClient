@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json;
+﻿using System;
+using Newtonsoft.Json;
 
 namespace DockerRegistry.Models
 {
@@ -17,6 +18,6 @@ namespace DockerRegistry.Models
         /// The manifests field contains a list of manifests for specific platforms.
         /// </summary>
         [JsonProperty("manifests")]
-        public ManifestReference[] Manifests { get; set; }
+        public ManifestReference[] Manifests { get; set; } = Array.Empty<ManifestReference>();
     }
 }

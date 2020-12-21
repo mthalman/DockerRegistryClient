@@ -45,13 +45,13 @@ namespace DockerRegistry
 
         private async Task<OAuthToken> GetOAuthTokenAsync(HttpResponseMessage response, HttpRequestMessage unauthorizedRequest, CancellationToken cancellationToken = default)
         {
-            AuthenticationHeaderValue bearerHeader = response.Headers.WwwAuthenticate
+            AuthenticationHeaderValue? bearerHeader = response.Headers.WwwAuthenticate
                 .AsEnumerable()
                 .FirstOrDefault(header => header.Scheme == HttpBearerChallenge.Bearer);
 
             if (bearerHeader is null)
             {
-                throw new AuthenticationException($"Bearer header not contained in unauthorized response from {response.RequestMessage.RequestUri}");
+                throw new AuthenticationException($"Bearer header not contained in unauthorized response from {response.RequestMessage?.RequestUri}");
             }
 
             HttpBearerChallenge challenge = HttpBearerChallenge.Parse(bearerHeader.Parameter);

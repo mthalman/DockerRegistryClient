@@ -5,18 +5,18 @@ namespace DockerRegistry.Models
     public class JsonWebKey
     {
         [JsonProperty("crv")]
-        public string Crv { get; set; }
+        public string? Crv { get; set; }
 
         [JsonProperty("kid")]
-        public string Kid { get; set; }
+        public string? Kid { get; set; }
 
         [JsonProperty("kty")]
-        public string Kty { get; set; }
+        public string? Kty { get; set; }
 
         [JsonProperty("x")]
-        public string X { get; set; }
+        public string? X { get; set; }
 
         [JsonProperty("y")]
-        public string Y { get; set; }
+        public string? Y { get; set; }
     }
 }

@@ -6,6 +6,6 @@ namespace DockerRegistry.Models
     public class Catalog
     {
         [JsonProperty("repositories")]
-        public List<string> RepositoryNames { get; set; }
+        public List<string> RepositoryNames { get; set; } = new List<string>();
     }
 }

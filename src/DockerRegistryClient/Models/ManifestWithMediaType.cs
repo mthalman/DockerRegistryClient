@@ -8,6 +8,6 @@ namespace DockerRegistry.Models
         /// The MIME type of the manifest.
         /// </summary>
         [JsonProperty("mediaType")]
-        public string MediaType { get; set; }
+        public string? MediaType { get; set; }
     }
 }
