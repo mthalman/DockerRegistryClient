@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json;
+﻿using System;
+using Newtonsoft.Json;
 
 namespace DockerRegistry.Models
 {
@@ -17,12 +18,12 @@ namespace DockerRegistry.Models
         /// The config field references a configuration object for a container, by digest. This configuration item is a JSON blob that the runtime uses to set up the container. This new schema uses a tweaked version of this configuration to allow image content-addressability on the daemon side.
         /// </summary>
         [JsonProperty("config")]
-        public ManifestConfig Config { get; set; }
+        public ManifestConfig? Config { get; set; }
 
         /// <summary>
         /// The layer list is ordered starting from the base image (opposite order of schema1).
         /// </summary>
         [JsonProperty("layers")]
-        public ManifestLayer[] Layers { get; set; }
+        public ManifestLayer[] Layers { get; set; } = Array.Empty<ManifestLayer>();
     }
 }

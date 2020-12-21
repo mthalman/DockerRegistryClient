@@ -51,30 +51,30 @@ namespace DockerRegistry
 
         private static ManifestInfo GetResult(HttpResponseMessage response, string content)
         {
-            string mediaType = response.Content.Headers.ContentType.MediaType;
+            if (response.Content is null)
+            {
+                throw new InvalidOperationException($"Response content is null.");
+            }
+
+            string? mediaType = response.Content.Headers.ContentType?.MediaType;
             string dockerContentDigest = GetDigest(response);
 
-            switch (mediaType)
+            return mediaType switch
             {
-                case ManifestMediaTypes.ManifestSchema1:
-                case ManifestMediaTypes.ManifestSchema1Signed:
-                    return new ManifestInfo(
-                        mediaType,
-                        dockerContentDigest,
-                        SafeJsonConvert.DeserializeObject<Manifest_Schema1>(content));
-                case ManifestMediaTypes.ManifestSchema2:
-                    return new ManifestInfo(
-                        mediaType,
-                        dockerContentDigest,
-                        SafeJsonConvert.DeserializeObject<Manifest_Schema2>(content));
-                case ManifestMediaTypes.ManifestList:
-                    return new ManifestInfo(
-                        mediaType,
-                        dockerContentDigest,
-                        SafeJsonConvert.DeserializeObject<ManifestList>(content));
-                default:
-                    throw new NotSupportedException($"Content type '{mediaType}' not supported.");
-            }
+                ManifestMediaTypes.ManifestSchema1 or ManifestMediaTypes.ManifestSchema1Signed => new ManifestInfo(
+                    mediaType,
+                    dockerContentDigest,
+                    SafeJsonConvert.DeserializeObject<Manifest_Schema1>(content)),
+                ManifestMediaTypes.ManifestSchema2 => new ManifestInfo(
+                    mediaType,
+                    dockerContentDigest,
+                    SafeJsonConvert.DeserializeObject<Manifest_Schema2>(content)),
+                ManifestMediaTypes.ManifestList => new ManifestInfo(
+                    mediaType,
+                    dockerContentDigest,
+                    SafeJsonConvert.DeserializeObject<ManifestList>(content)),
+                _ => throw new NotSupportedException($"Content type '{mediaType}' not supported."),
+            };
         }
     }
 }

@@ -18,35 +18,35 @@ namespace DockerRegistry
         public ITagOperations Tags { get; }
         public IManifestOperations Manifests { get; }
 
-        private readonly ServiceClientCredentials credentials;
+        private readonly ServiceClientCredentials? credentials;
 
         public DockerRegistryClient(string registry)
             : this(registry, null)
         {
         }
 
-        public DockerRegistryClient(string registry, ServiceClientCredentials serviceClientCredentials)
-            : this(registry, serviceClientCredentials, (HttpClientHandler)null)
+        public DockerRegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials)
+            : this(registry, serviceClientCredentials, (HttpClientHandler?)null)
         {
             
         }
 
-        public DockerRegistryClient(string registry, ServiceClientCredentials serviceClientCredentials, HttpClient httpClient, bool disposeHttpClient = true)
+        public DockerRegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials, HttpClient httpClient, bool disposeHttpClient = true)
             : this(registry, serviceClientCredentials, httpClient, disposeHttpClient, null)
         {
         }
 
-        public DockerRegistryClient(string registry, ServiceClientCredentials serviceClientCredentials, params DelegatingHandler[] handlers)
+        public DockerRegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials, params DelegatingHandler[] handlers)
             : this(registry, serviceClientCredentials, null, handlers)
         {
         }
 
-        public DockerRegistryClient(string registry, ServiceClientCredentials serviceClientCredentials, HttpClientHandler rootHandler, params DelegatingHandler[] handlers)
+        public DockerRegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials, HttpClientHandler? rootHandler, params DelegatingHandler[] handlers)
             : this(registry, serviceClientCredentials, null, true, rootHandler, handlers)
         {
         }
 
-        private DockerRegistryClient(string registry, ServiceClientCredentials serviceClientCredentials, HttpClient httpClient, bool disposeHttpClient, HttpClientHandler rootHandler, params DelegatingHandler[] handlers)
+        private DockerRegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials, HttpClient? httpClient, bool disposeHttpClient, HttpClientHandler? rootHandler, params DelegatingHandler[] handlers)
             : base(httpClient, disposeHttpClient)
         {
             this.InitializeHttpClient(httpClient, rootHandler, handlers.Append(new OAuthDelegatingHandler()).ToArray());
@@ -65,7 +65,8 @@ namespace DockerRegistry
         internal Task<HttpOperationResponse<T>> SendRequestAsync<T>(HttpRequestMessage request, CancellationToken cancellationToken = default) =>
             this.SendRequestAsync<T>(request, null, cancellationToken);
 
-        internal async Task<HttpOperationResponse<T>> SendRequestAsync<T>(HttpRequestMessage request, Func<HttpResponseMessage, string, T> getResult, CancellationToken cancellationToken = default)
+        internal async Task<HttpOperationResponse<T>> SendRequestAsync<T>(HttpRequestMessage request,
+            Func<HttpResponseMessage, string, T>? getResult, CancellationToken cancellationToken = default)
         {
             if (this.credentials != null)
             {
@@ -78,6 +79,17 @@ namespace DockerRegistry
             if (!response.IsSuccessStatusCode)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
+                if (request.Content is null)
+                {
+                    throw new InvalidOperationException("Request content is null.");
+                }
+
+                if (response.Content is null)
+                {
+                    throw new InvalidOperationException($"Response content is null.");
+                }
+
                 string requestContent = await request.Content.ReadAsStringAsync().ConfigureAwait(false);
                 string errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 ErrorResult errorResult = SafeJsonConvert.DeserializeObject<ErrorResult>(errorContent);

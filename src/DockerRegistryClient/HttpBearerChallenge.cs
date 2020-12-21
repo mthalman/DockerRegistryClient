@@ -24,18 +24,18 @@ namespace DockerRegistry
             this.Scope = scope;
         }
 
-        public static HttpBearerChallenge Parse(string challenge)
+        public static HttpBearerChallenge Parse(string? challenge)
         {
-            if (!ValidateChallenge(challenge))
+            if (challenge is null || !ValidateChallenge(challenge))
             {
-                return null;
+                throw new ArgumentException($"Unable to parse HTTP bearer from '{challenge}'.", challenge);
             }
 
             var matches = BearerRegex.Matches(challenge);
 
-            string realm = null;
-            string service = null;
-            string scope = null;
+            string? realm = null;
+            string? service = null;
+            string? scope = null;
 
             foreach (Match match in matches)
             {
@@ -44,18 +44,33 @@ namespace DockerRegistry
                 scope = scope ?? GetGroupValue(match, ScopeParameter);
             }
 
+            if (realm is null)
+            {
+                throw new ArgumentException($"Unable to parse realm from '{challenge}'.", challenge);
+            }
+
+            if (service is null)
+            {
+                throw new ArgumentException($"Unable to parse service from '{challenge}'.", challenge);
+            }
+
+            if (scope is null)
+            {
+                throw new ArgumentException($"Unable to parse scope from '{challenge}'.", challenge);
+            }
+
             return new HttpBearerChallenge(realm, service, scope);
         }
 
-        private static string GetGroupValue(Match match, string groupName)
+        private static string? GetGroupValue(Match match, string groupName)
         {
             Group group = match.Groups[groupName];
             return group.Success ? group.Value : null;
         }
 
-        private static bool ValidateChallenge(string challenge)
+        private static bool ValidateChallenge(string? challenge)
         {
-            if (String.IsNullOrEmpty(challenge) && BearerRegex.IsMatch(challenge))
+            if (String.IsNullOrEmpty(challenge) || !BearerRegex.IsMatch(challenge))
             {
                 return false;
             }
