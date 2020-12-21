@@ -16,10 +16,26 @@ namespace DockerRegistry
             this.Client = client;
         }
 
-        public Task<HttpOperationResponse<Catalog>> GetWithHttpMessagesAsync(CancellationToken cancellationToken = default)
+        public Task<HttpOperationResponse<Page<Catalog>>> GetWithHttpMessagesAsync(int? count = null, CancellationToken cancellationToken = default)
         {
-            Uri requestUri = new Uri(this.Client.BaseUri.AbsoluteUri + "v2/_catalog");
-            return this.Client.SendRequestAsync<Catalog>(new HttpRequestMessage(HttpMethod.Get, requestUri), cancellationToken);
+            string url = UrlHelper.ApplyCount($"v2/_catalog", count);
+            return GetNextWithHttpMessagesAsync(url, cancellationToken);
+        }
+
+        public Task<HttpOperationResponse<Page<Catalog>>> GetNextWithHttpMessagesAsync(string nextPageLink, CancellationToken cancellationToken = default)
+        {
+            return this.Client.SendRequestAsync(
+                new HttpRequestMessage(
+                    HttpMethod.Get,
+                    new Uri(UrlHelper.Concat(this.Client.BaseUri.AbsoluteUri, nextPageLink))),
+                GetResult,
+                cancellationToken);
+        }
+
+        private static Page<Catalog> GetResult(HttpResponseMessage response, string content)
+        {
+            string? nextLink = DockerRegistryClient.GetNextLinkUrl(response);
+            return new Page<Catalog>(DockerRegistryClient.GetResult<Catalog>(response, content), nextLink);
         }
     }
 }

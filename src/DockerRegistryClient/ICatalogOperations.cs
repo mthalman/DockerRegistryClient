@@ -7,6 +7,7 @@ namespace DockerRegistry
 {
     public interface ICatalogOperations
     {
-        Task<HttpOperationResponse<Catalog>> GetWithHttpMessagesAsync(CancellationToken cancellationToken = default);
+        Task<HttpOperationResponse<Page<Catalog>>> GetWithHttpMessagesAsync(int? count = null, CancellationToken cancellationToken = default);
+        Task<HttpOperationResponse<Page<Catalog>>> GetNextWithHttpMessagesAsync(string nextPageLink, CancellationToken cancellationToken = default);
     }
 }

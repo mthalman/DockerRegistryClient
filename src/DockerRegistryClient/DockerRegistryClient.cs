@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -125,7 +126,31 @@ namespace DockerRegistry
             }
         }
 
-        private static T GetResult<T>(HttpResponseMessage response, string content) =>
+        internal static T GetResult<T>(HttpResponseMessage response, string content) =>
             SafeJsonConvert.DeserializeObject<T>(content);
+
+        internal static string? GetNextLinkUrl(HttpResponseMessage response)
+        {
+            if (response.Headers.TryGetValues("Link", out IEnumerable<string>? linkValues))
+            {
+                HttpLink? nextLink = linkValues
+                    .Select(linkValue =>
+                    {
+                        HttpLink.TryParse(linkValue, out HttpLink? httpLink);
+                        return httpLink;
+                    })
+                    .FirstOrDefault(link => link?.Relationship == "next");
+
+                if (nextLink is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Unable to parse link header '{string.Join(", ", linkValues.ToArray())}'");
+                }
+                
+                return nextLink.Url;
+            }
+
+            return null;
+        }
     }
 }
