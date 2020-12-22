@@ -16,10 +16,28 @@ namespace DockerRegistry
             this.Client = client;
         }
 
-        public Task<HttpOperationResponse<RepositoryTags>> GetWithHttpMessagesAsync(string repositoryName, CancellationToken cancellationToken = default)
+        public Task<HttpOperationResponse<Page<RepositoryTags>>> GetWithHttpMessagesAsync(
+            string repositoryName, int? count = null, CancellationToken cancellationToken = default)
         {
-            Uri requestUri = new Uri(this.Client.BaseUri.AbsoluteUri + $"v2/{repositoryName}/tags/list");
-            return this.Client.SendRequestAsync<RepositoryTags>(new HttpRequestMessage(HttpMethod.Get, requestUri), cancellationToken);
+            string url = UrlHelper.ApplyCount($"v2/{repositoryName}/tags/list", count);
+            return GetNextWithHttpMessagesAsync(url, cancellationToken);
+        }
+
+        public Task<HttpOperationResponse<Page<RepositoryTags>>> GetNextWithHttpMessagesAsync(
+            string nextPageLink, CancellationToken cancellationToken = default)
+        {
+            return this.Client.SendRequestAsync(
+                new HttpRequestMessage(
+                    HttpMethod.Get,
+                    new Uri(UrlHelper.Concat(this.Client.BaseUri.AbsoluteUri, nextPageLink))),
+                GetResult,
+                cancellationToken);
+        }
+
+        private static Page<RepositoryTags> GetResult(HttpResponseMessage response, string content)
+        {
+            string? nextLink = DockerRegistryClient.GetNextLinkUrl(response);
+            return new Page<RepositoryTags>(DockerRegistryClient.GetResult<RepositoryTags>(response, content), nextLink);
         }
     }
 }
