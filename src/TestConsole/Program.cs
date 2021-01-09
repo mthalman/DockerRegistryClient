@@ -1,5 +1,5 @@
 ﻿using System.Threading.Tasks;
-using DockerRegistry;
+using Valleysoft.DockerRegistry;
 using Microsoft.Rest;
 
 namespace TestConsole
