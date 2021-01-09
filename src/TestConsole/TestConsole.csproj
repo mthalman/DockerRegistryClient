@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\DockerRegistryClient\DockerRegistry.csproj" />
+    <ProjectReference Include="..\Valleysoft.DockerRegistryClient\Valleysoft.DockerRegistryClient.csproj" />
   </ItemGroup>
 
 </Project>
