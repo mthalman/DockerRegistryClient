@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net5.0</TargetFramework>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>dreg</ToolCommandName>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>Valleysoft.DockerRegistryClient.Cli</PackageId>
+    <Title>Docker Registry Client CLI</Title>
+    <Description>CLI for executing commands on a Docker registry's HTTP API.</Description>
+    <PackageTags>docker</PackageTags>
+    <Authors>Matt Thalman and Contributors</Authors>
+    <RepositoryUrl>https://github.com/mthalman/DockerRegistryClient</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta1.20574.7" />
+    <PackageReference Include="Valleysoft.DockerCredsProvider" Version="1.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Valleysoft.DockerRegistryClient\Valleysoft.DockerRegistryClient.csproj" />
+  </ItemGroup>
+
+</Project>

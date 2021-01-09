@@ -4,12 +4,12 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Valleysoft.DockerRegistry.Models;
+using Valleysoft.DockerRegistryClient.Models;
 using Microsoft.Rest;
 using Microsoft.Rest.Serialization;
 using Newtonsoft.Json;
 
-namespace Valleysoft.DockerRegistry
+namespace Valleysoft.DockerRegistryClient
 {
     public class DockerRegistryClient : ServiceClient<DockerRegistryClient>
     {
@@ -81,17 +81,22 @@ namespace Valleysoft.DockerRegistry
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (request.Content is null)
-                {
-                    throw new InvalidOperationException("Request content is null.");
-                }
+                //if (request.Content is null)
+                //{
+                //    throw new InvalidOperationException("Request content is null.");
+                //}
 
                 if (response.Content is null)
                 {
                     throw new InvalidOperationException($"Response content is null.");
                 }
 
-                string requestContent = await request.Content.ReadAsStringAsync().ConfigureAwait(false);
+                string? requestContent = null;
+                if (request.Content is not null)
+                {
+                    requestContent = await request.Content.ReadAsStringAsync().ConfigureAwait(false);
+                }
+                
                 string errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 ErrorResult errorResult = SafeJsonConvert.DeserializeObject<ErrorResult>(errorContent);
 

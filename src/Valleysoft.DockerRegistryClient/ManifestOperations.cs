@@ -5,11 +5,11 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Valleysoft.DockerRegistry.Models;
+using Valleysoft.DockerRegistryClient.Models;
 using Microsoft.Rest;
 using Microsoft.Rest.Serialization;
 
-namespace Valleysoft.DockerRegistry
+namespace Valleysoft.DockerRegistryClient
 {
     internal class ManifestOperations : IServiceOperations<DockerRegistryClient>, IManifestOperations
     {

@@ -1,9 +1,9 @@
 ﻿using System.Threading;
 using System.Threading.Tasks;
-using Valleysoft.DockerRegistry.Models;
+using Valleysoft.DockerRegistryClient.Models;
 using Microsoft.Rest;
 
-namespace Valleysoft.DockerRegistry
+namespace Valleysoft.DockerRegistryClient
 {
     public interface IManifestOperations
     {

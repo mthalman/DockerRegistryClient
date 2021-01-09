@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Text.RegularExpressions;
 
-namespace Valleysoft.DockerRegistry
+namespace Valleysoft.DockerRegistryClient
 {
     internal class HttpBearerChallenge
     {

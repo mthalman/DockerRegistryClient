@@ -1,6 +1,6 @@
 ﻿using System.Linq;
 
-namespace Valleysoft.DockerRegistry
+namespace Valleysoft.DockerRegistryClient
 {
     internal static class UrlHelper
     {

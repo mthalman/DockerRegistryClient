@@ -1,4 +1,4 @@
-﻿namespace Valleysoft.DockerRegistry
+﻿namespace Valleysoft.DockerRegistryClient
 {
     public static class ManifestMediaTypes
     {
