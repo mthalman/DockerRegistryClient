@@ -1,8 +1,8 @@
 ﻿using System.Threading;
 using System.Threading.Tasks;
-using Valleysoft.DockerRegistry.Models;
+using Valleysoft.DockerRegistryClient.Models;
 
-namespace Valleysoft.DockerRegistry
+namespace Valleysoft.DockerRegistryClient
 {
     public static class ManifestOperationsExtensions
     {

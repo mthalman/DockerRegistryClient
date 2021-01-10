@@ -1,7 +1,7 @@
 ﻿using System;
 using Newtonsoft.Json;
 
-namespace Valleysoft.DockerRegistry.Models
+namespace Valleysoft.DockerRegistryClient.Models
 {
     /// <summary>
     /// The image manifest provides a configuration and a set of layers for a container image. It’s the direct replacement for the schema-1 manifest.

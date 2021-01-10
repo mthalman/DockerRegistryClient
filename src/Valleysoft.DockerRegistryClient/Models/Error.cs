@@ -1,7 +1,7 @@
 ﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace Valleysoft.DockerRegistry.Models
+namespace Valleysoft.DockerRegistryClient.Models
 {
     public class Error
     {

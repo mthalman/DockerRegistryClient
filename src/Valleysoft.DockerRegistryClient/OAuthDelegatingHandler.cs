@@ -6,12 +6,12 @@ using System.Net.Http.Headers;
 using System.Security.Authentication;
 using System.Threading;
 using System.Threading.Tasks;
-using Valleysoft.DockerRegistry.Models;
+using Valleysoft.DockerRegistryClient.Models;
 using Microsoft.Rest;
 using Microsoft.Rest.Serialization;
 using Newtonsoft.Json;
 
-namespace Valleysoft.DockerRegistry
+namespace Valleysoft.DockerRegistryClient
 {
     internal class OAuthDelegatingHandler : DelegatingHandler
     {

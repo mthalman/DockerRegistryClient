@@ -1,7 +1,7 @@
 ﻿using System;
 using Newtonsoft.Json;
 
-namespace Valleysoft.DockerRegistry.Models
+namespace Valleysoft.DockerRegistryClient.Models
 {
     internal class OAuthToken
     {

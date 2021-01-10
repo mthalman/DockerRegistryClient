@@ -1,6 +1,6 @@
 ﻿using Newtonsoft.Json;
 
-namespace Valleysoft.DockerRegistry.Models
+namespace Valleysoft.DockerRegistryClient.Models
 {
     public abstract class Manifest
     {
