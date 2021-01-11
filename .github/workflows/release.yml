@@ -1,4 +1,4 @@
-name: CLI Release
+name: Release
 
 on:
   workflow_dispatch:
@@ -27,12 +27,12 @@ jobs:
         run: dotnet restore
 
       - name: Build
-        run: dotnet build -c Release --no-restore Valleysoft.DockerRegistryClient.Cli
+        run: dotnet build -c Release --no-restore Valleysoft.DockerRegistryClient
 
       - name: Pack
         env:
           PACKAGE_VERSION: ${{ github.event.inputs.packageVersion }}
-        run: dotnet pack -c Release -p:Version=$PACKAGE_VERSION Valleysoft.DockerRegistryClient.Cli
+        run: dotnet pack -c Release -p:Version=$PACKAGE_VERSION Valleysoft.DockerRegistryClient
       
       - name: Publish Package
-        run: dotnet nuget push "Valleysoft.DockerRegistryClient.Cli/bin/Release/*.nupkg" -k ${{secrets.NUGET_ORG_API_KEY}} -s https://nuget.org
+        run: dotnet nuget push "Valleysoft.DockerRegistryClient/bin/Release/*.nupkg" -k ${{secrets.NUGET_ORG_API_KEY}} -s https://nuget.org
