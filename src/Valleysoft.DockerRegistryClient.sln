@@ -5,8 +5,6 @@ VisualStudioVersion = 16.0.30404.54
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Valleysoft.DockerRegistryClient", "Valleysoft.DockerRegistryClient\Valleysoft.DockerRegistryClient.csproj", "{E658A6E2-2F63-48DB-A865-9D4741B914AF}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Valleysoft.DockerRegistryClient.Cli", "Valleysoft.DockerRegistryClient.Cli\Valleysoft.DockerRegistryClient.Cli.csproj", "{195C5841-D00E-461A-B08C-456C99FA5DC9}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -17,10 +15,6 @@ Global
 		{E658A6E2-2F63-48DB-A865-9D4741B914AF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E658A6E2-2F63-48DB-A865-9D4741B914AF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E658A6E2-2F63-48DB-A865-9D4741B914AF}.Release|Any CPU.Build.0 = Release|Any CPU
-		{195C5841-D00E-461A-B08C-456C99FA5DC9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{195C5841-D00E-461A-B08C-456C99FA5DC9}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{195C5841-D00E-461A-B08C-456C99FA5DC9}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{195C5841-D00E-461A-B08C-456C99FA5DC9}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
