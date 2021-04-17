@@ -2,12 +2,11 @@
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Valleysoft.DockerRegistryClient.Models;
 using Microsoft.Rest;
 using Microsoft.Rest.Serialization;
+using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient
 {
@@ -35,11 +34,11 @@ namespace Valleysoft.DockerRegistryClient
                 cancellationToken);
 
         private Uri GetManifestUri(string repositoryName, string tagOrDigest) =>
-            new Uri(this.Client.BaseUri.AbsoluteUri + $"v2/{repositoryName}/manifests/{tagOrDigest}");
+            new(this.Client.BaseUri.AbsoluteUri + $"v2/{repositoryName}/manifests/{tagOrDigest}");
 
         private static HttpRequestMessage CreateGetRequestMessage(Uri requestUri, HttpMethod method)
         {
-            HttpRequestMessage request = new HttpRequestMessage(method, requestUri);
+            HttpRequestMessage request = new(method, requestUri);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.ManifestSchema1));
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.ManifestSchema2));
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.ManifestList));
