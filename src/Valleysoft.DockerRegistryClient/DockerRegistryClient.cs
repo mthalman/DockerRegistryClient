@@ -8,6 +8,7 @@ using Valleysoft.DockerRegistryClient.Models;
 using Microsoft.Rest;
 using Microsoft.Rest.Serialization;
 using Newtonsoft.Json;
+using System.IO;
 
 namespace Valleysoft.DockerRegistryClient
 {
@@ -15,6 +16,7 @@ namespace Valleysoft.DockerRegistryClient
     {
         public string Registry { get; }
         public Uri BaseUri { get; }
+        public IBlobOperations Blobs { get; }
         public ICatalogOperations Catalog { get; }
         public ITagOperations Tags { get; }
         public IManifestOperations Manifests { get; }
@@ -58,16 +60,23 @@ namespace Valleysoft.DockerRegistryClient
             this.credentials = serviceClientCredentials;
             serviceClientCredentials?.InitializeServiceClient(this);
 
+            this.Blobs = new BlobOperations(this);
             this.Catalog = new CatalogOperations(this);
             this.Tags = new TagOperations(this);
             this.Manifests = new ManifestOperations(this);
         }
 
         internal Task<HttpOperationResponse<T>> SendRequestAsync<T>(HttpRequestMessage request, CancellationToken cancellationToken = default) =>
-            this.SendRequestAsync<T>(request, null, cancellationToken);
+            SendRequestAsync(request, (Func<HttpResponseMessage, string, T>?)null, cancellationToken);
 
         internal async Task<HttpOperationResponse<T>> SendRequestAsync<T>(HttpRequestMessage request,
             Func<HttpResponseMessage, string, T>? getResult, CancellationToken cancellationToken = default)
+        {
+            HttpResponseMessage response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+            return await GetStringContentAsync(request, response, getResult).ConfigureAwait(false);
+        }
+
+        internal async Task<HttpResponseMessage> SendRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
         {
             if (this.credentials != null)
             {
@@ -80,11 +89,6 @@ namespace Valleysoft.DockerRegistryClient
             if (!response.IsSuccessStatusCode)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-
-                //if (request.Content is null)
-                //{
-                //    throw new InvalidOperationException("Request content is null.");
-                //}
 
                 if (response.Content is null)
                 {
@@ -111,10 +115,15 @@ namespace Valleysoft.DockerRegistryClient
             }
             response.EnsureSuccessStatusCode();
 
-            cancellationToken.ThrowIfCancellationRequested();
+            return response;
+        }
+
+        internal static async Task<HttpOperationResponse<T>> GetStringContentAsync<T>(
+            HttpRequestMessage request, HttpResponseMessage response, Func<HttpResponseMessage, string, T>? getResult)
+        {
             string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-            getResult = getResult ?? GetResult<T>;
+            getResult ??= GetResult<T>;
 
             try
             {
@@ -131,6 +140,18 @@ namespace Valleysoft.DockerRegistryClient
             }
         }
 
+        internal static async Task<HttpOperationResponse<Stream>> GetStreamContentAsync(HttpRequestMessage request, HttpResponseMessage response)
+        {
+            Stream stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+
+            return new HttpOperationResponse<Stream>
+            {
+                Body = stream,
+                Request = request,
+                Response = response
+            };
+        }
+
         internal static T GetResult<T>(HttpResponseMessage response, string content) =>
             SafeJsonConvert.DeserializeObject<T>(content);
 
@@ -141,8 +162,12 @@ namespace Valleysoft.DockerRegistryClient
                 HttpLink? nextLink = linkValues
                     .Select(linkValue =>
                     {
-                        HttpLink.TryParse(linkValue, out HttpLink? httpLink);
-                        return httpLink;
+                        if (HttpLink.TryParse(linkValue, out HttpLink? httpLink))
+                        {
+                            return httpLink;
+                        }
+
+                        return null;
                     })
                     .FirstOrDefault(link => link?.Relationship == "next");
 
