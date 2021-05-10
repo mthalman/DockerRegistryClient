@@ -39,7 +39,7 @@ namespace Valleysoft.DockerRegistryClient
         private async Task<HttpRequestMessage> GetAuthenticatedRequestAsync(HttpResponseMessage response, HttpRequestMessage request, CancellationToken cancellationToken = default)
         {
             var authToken = await GetOAuthTokenAsync(response, request, cancellationToken).ConfigureAwait(false);
-            request.Headers.Authorization = new AuthenticationHeaderValue(HttpBearerChallenge.Bearer, authToken.Token);
+            request.Headers.Authorization = new AuthenticationHeaderValue(HttpBearerChallenge.Bearer, authToken.AccessToken ?? authToken.Token);
             return request;
         }
 
