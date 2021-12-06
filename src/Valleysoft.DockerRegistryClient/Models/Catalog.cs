@@ -1,11 +1,9 @@
-﻿using System.Collections.Generic;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 
-namespace Valleysoft.DockerRegistryClient.Models
+namespace Valleysoft.DockerRegistryClient.Models;
+
+public class Catalog
 {
-    public class Catalog
-    {
-        [JsonProperty("repositories")]
-        public List<string> RepositoryNames { get; set; } = new List<string>();
-    }
+    [JsonProperty("repositories")]
+    public List<string> RepositoryNames { get; set; } = new List<string>();
 }

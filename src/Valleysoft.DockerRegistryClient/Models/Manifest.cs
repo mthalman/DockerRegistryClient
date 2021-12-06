@@ -1,10 +1,9 @@
 ﻿using Newtonsoft.Json;
 
-namespace Valleysoft.DockerRegistryClient.Models
+namespace Valleysoft.DockerRegistryClient.Models;
+
+public abstract class Manifest
 {
-    public abstract class Manifest
-    {
-        [JsonProperty("schemaVersion")]
-        public int SchemaVersion { get; set; }
-    }
+    [JsonProperty("schemaVersion")]
+    public int SchemaVersion { get; set; }
 }

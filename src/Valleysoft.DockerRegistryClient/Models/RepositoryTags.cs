@@ -1,14 +1,12 @@
-﻿using System;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 
-namespace Valleysoft.DockerRegistryClient.Models
+namespace Valleysoft.DockerRegistryClient.Models;
+ 
+public class RepositoryTags
 {
-    public class RepositoryTags
-    {
-        [JsonProperty("name")]
-        public string? RepositoryName { get; set; }
+    [JsonProperty("name")]
+    public string? RepositoryName { get; set; }
 
-        [JsonProperty("tags")]
-        public string[] Tags { get; set; } = Array.Empty<string>();
-    }
+    [JsonProperty("tags")]
+    public string[] Tags { get; set; } = Array.Empty<string>();
 }
