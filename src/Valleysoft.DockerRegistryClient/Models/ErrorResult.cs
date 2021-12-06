@@ -1,11 +1,9 @@
-﻿using System;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 
-namespace Valleysoft.DockerRegistryClient.Models
+namespace Valleysoft.DockerRegistryClient.Models;
+
+public class ErrorResult
 {
-    public class ErrorResult
-    {
-        [JsonProperty("errors")]
-        public Error[] Errors { get; set; } = Array.Empty<Error>();
-    }
+    [JsonProperty("errors")]
+    public Error[] Errors { get; set; } = Array.Empty<Error>();
 }

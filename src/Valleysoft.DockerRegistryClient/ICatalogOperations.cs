@@ -1,13 +1,10 @@
-﻿using System.Threading;
-using System.Threading.Tasks;
+﻿using Microsoft.Rest;
 using Valleysoft.DockerRegistryClient.Models;
-using Microsoft.Rest;
 
-namespace Valleysoft.DockerRegistryClient
+namespace Valleysoft.DockerRegistryClient;
+ 
+public interface ICatalogOperations
 {
-    public interface ICatalogOperations
-    {
-        Task<HttpOperationResponse<Page<Catalog>>> GetWithHttpMessagesAsync(int? count = null, CancellationToken cancellationToken = default);
-        Task<HttpOperationResponse<Page<Catalog>>> GetNextWithHttpMessagesAsync(string nextPageLink, CancellationToken cancellationToken = default);
-    }
+    Task<HttpOperationResponse<Page<Catalog>>> GetWithHttpMessagesAsync(int? count = null, CancellationToken cancellationToken = default);
+    Task<HttpOperationResponse<Page<Catalog>>> GetNextWithHttpMessagesAsync(string nextPageLink, CancellationToken cancellationToken = default);
 }

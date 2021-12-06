@@ -1,26 +1,21 @@
-﻿using System.IO;
-using System.Net.Http;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Rest;
+﻿using Microsoft.Rest;
 
-namespace Valleysoft.DockerRegistryClient
+namespace Valleysoft.DockerRegistryClient;
+ 
+internal class BlobOperations : IServiceOperations<DockerRegistryClient>, IBlobOperations
 {
-    internal class BlobOperations : IServiceOperations<DockerRegistryClient>, IBlobOperations
+    public DockerRegistryClient Client { get; }
+
+    public BlobOperations(DockerRegistryClient client)
     {
-        public DockerRegistryClient Client { get; }
+        this.Client = client;
+    }
 
-        public BlobOperations(DockerRegistryClient client)
-        {
-            this.Client = client;
-        }
-
-        public async Task<HttpOperationResponse<Stream>> GetWithHttpMessagesAsync(
-            string repositoryName, string digest, CancellationToken cancellationToken = default)
-        {
-            HttpRequestMessage request = new(HttpMethod.Get, $"{this.Client.BaseUri.AbsoluteUri}/v2/{repositoryName}/blobs/{digest}");
-            HttpResponseMessage response = await this.Client.SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
-            return await DockerRegistryClient.GetStreamContentAsync(request, response).ConfigureAwait(false);
-        }
+    public async Task<HttpOperationResponse<Stream>> GetWithHttpMessagesAsync(
+        string repositoryName, string digest, CancellationToken cancellationToken = default)
+    {
+        HttpRequestMessage request = new(HttpMethod.Get, $"{this.Client.BaseUri.AbsoluteUri}/v2/{repositoryName}/blobs/{digest}");
+        HttpResponseMessage response = await this.Client.SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+        return await DockerRegistryClient.GetStreamContentAsync(request, response).ConfigureAwait(false);
     }
 }

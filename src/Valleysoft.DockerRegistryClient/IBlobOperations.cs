@@ -1,13 +1,9 @@
-﻿using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Rest;
+﻿using Microsoft.Rest;
 
-namespace Valleysoft.DockerRegistryClient
+namespace Valleysoft.DockerRegistryClient;
+ 
+public interface IBlobOperations
 {
-    public interface IBlobOperations
-    {
-        Task<HttpOperationResponse<Stream>> GetWithHttpMessagesAsync(
-            string repositoryName, string digest, CancellationToken cancellationToken = default);
-    }
+    Task<HttpOperationResponse<Stream>> GetWithHttpMessagesAsync(
+        string repositoryName, string digest, CancellationToken cancellationToken = default);
 }
