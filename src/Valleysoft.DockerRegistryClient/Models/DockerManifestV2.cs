@@ -5,11 +5,11 @@ namespace Valleysoft.DockerRegistryClient.Models;
 /// <summary>
 /// The image manifest provides a configuration and a set of layers for a container image. It’s the direct replacement for the schema-1 manifest.
 /// </summary>
-public class Manifest_Schema2 : ManifestWithMediaType
+public class DockerManifestV2 : ManifestWithMediaType
 {
-    public Manifest_Schema2()
+    public DockerManifestV2()
     {
-        MediaType = ManifestMediaTypes.ManifestSchema2;
+        MediaType = ManifestMediaTypes.DockerManifestSchema2;
         SchemaVersion = 2;
     }
 

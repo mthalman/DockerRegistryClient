@@ -9,7 +9,7 @@ public class ManifestList : ManifestWithMediaType
 {
     public ManifestList()
     {
-        MediaType = ManifestMediaTypes.ManifestList;
+        MediaType = ManifestMediaTypes.DockerManifestList;
         SchemaVersion = 2;
     }
 

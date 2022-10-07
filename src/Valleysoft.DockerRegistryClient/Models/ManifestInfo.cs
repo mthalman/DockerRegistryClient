@@ -1,6 +1,4 @@
-﻿using Newtonsoft.Json;
-
-namespace Valleysoft.DockerRegistryClient.Models;
+﻿namespace Valleysoft.DockerRegistryClient.Models;
 
 public class ManifestInfo
 {
