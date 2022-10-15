@@ -10,6 +10,8 @@ namespace Valleysoft.DockerRegistryClient;
 
 internal class OAuthDelegatingHandler : DelegatingHandler
 {
+    private AuthenticationHeaderValue? authorization;
+
     public OAuthDelegatingHandler()
     {
     }
@@ -20,6 +22,13 @@ internal class OAuthDelegatingHandler : DelegatingHandler
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        authorization = request.Headers.Authorization;
+
+        // For the initial request, don't provide authorization. Not all registries will return 401 if Authorization
+        // is provided which requires an OAuth challenge. For example, ghcr.io will return a 403 in that case and won't
+        // return a challenge.
+        request.Headers.Authorization = null;
+        
         HttpResponseMessage response = await base.SendAsync(request, cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)
@@ -51,9 +60,27 @@ internal class OAuthDelegatingHandler : DelegatingHandler
 
         HttpBearerChallenge challenge = HttpBearerChallenge.Parse(bearerHeader.Parameter);
 
-        Uri authenticateUri = new($"{challenge.Realm}?service={challenge.Service}&scope={challenge.Scope}");
-        HttpRequestMessage authenticateRequest = new(HttpMethod.Get, authenticateUri);
-        authenticateRequest.Headers.Authorization = unauthorizedRequest.Headers.Authorization;
+        HttpRequestMessage authenticateRequest;
+        if (authorization is not null && authorization.Scheme == "Bearer")
+        {
+            authenticateRequest = new(HttpMethod.Post, challenge.Realm)
+            {
+                Content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    { "client_id", "registry-client" },
+                    { "grant_type", "refresh_token" },
+                    { "refresh_token", authorization.Parameter },
+                    { "scope", challenge.Scope },
+                    { "service", challenge.Service },
+                })
+            };
+        }
+        else
+        {
+            Uri authenticateUri = new($"{challenge.Realm}?service={challenge.Service}&scope={challenge.Scope}");
+            authenticateRequest = new(HttpMethod.Get, authenticateUri);
+            authenticateRequest.Headers.Authorization = authorization;
+        }
 
         cancellationToken.ThrowIfCancellationRequested();
         response = await base.SendAsync(authenticateRequest, cancellationToken).ConfigureAwait(false);
