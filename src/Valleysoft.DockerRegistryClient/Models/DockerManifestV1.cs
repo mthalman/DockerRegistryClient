@@ -2,9 +2,9 @@
 
 namespace Valleysoft.DockerRegistryClient.Models;
 
-public class Manifest_Schema1 : Manifest
+public class DockerManifestV1 : Manifest
 {
-    public Manifest_Schema1()
+    public DockerManifestV1()
     {
         SchemaVersion = 1;
     }

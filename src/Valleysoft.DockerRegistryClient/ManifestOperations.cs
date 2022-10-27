@@ -34,9 +34,11 @@ internal class ManifestOperations : IServiceOperations<DockerRegistryClient>, IM
     private static HttpRequestMessage CreateGetRequestMessage(Uri requestUri, HttpMethod method)
     {
         HttpRequestMessage request = new(method, requestUri);
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.ManifestSchema1));
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.ManifestSchema2));
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.ManifestList));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.DockerManifestSchema1));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.DockerManifestSchema2));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.DockerManifestList));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.OciManifestSchema1));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.OciManifestList1));
         return request;
     }
 
@@ -55,18 +57,26 @@ internal class ManifestOperations : IServiceOperations<DockerRegistryClient>, IM
 
         return mediaType switch
         {
-            ManifestMediaTypes.ManifestSchema1 or ManifestMediaTypes.ManifestSchema1Signed => new ManifestInfo(
+            ManifestMediaTypes.DockerManifestSchema1 or ManifestMediaTypes.DockerManifestSchema1Signed => new ManifestInfo(
                 mediaType,
                 dockerContentDigest,
-                SafeJsonConvert.DeserializeObject<Manifest_Schema1>(content)),
-            ManifestMediaTypes.ManifestSchema2 => new ManifestInfo(
+                SafeJsonConvert.DeserializeObject<DockerManifestV1>(content)),
+            ManifestMediaTypes.DockerManifestSchema2 => new ManifestInfo(
                 mediaType,
                 dockerContentDigest,
-                SafeJsonConvert.DeserializeObject<Manifest_Schema2>(content)),
-            ManifestMediaTypes.ManifestList => new ManifestInfo(
+                SafeJsonConvert.DeserializeObject<DockerManifestV2>(content)),
+            ManifestMediaTypes.DockerManifestList => new ManifestInfo(
                 mediaType,
                 dockerContentDigest,
                 SafeJsonConvert.DeserializeObject<ManifestList>(content)),
+            ManifestMediaTypes.OciManifestSchema1 => new ManifestInfo(
+                mediaType,
+                dockerContentDigest,
+                SafeJsonConvert.DeserializeObject<OciManifest>(content)),
+            ManifestMediaTypes.OciManifestList1 => new ManifestInfo(
+                mediaType,
+                dockerContentDigest,
+                SafeJsonConvert.DeserializeObject<OciManifestList>(content)),
             _ => throw new NotSupportedException($"Content type '{mediaType}' not supported."),
         };
     }
