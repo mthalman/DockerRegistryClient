@@ -8,13 +8,13 @@ public class ManifestPlatform
     /// The architecture field specifies the CPU architecture, for example amd64 or ppc64le
     /// </summary>
     [JsonProperty("architecture")]
-    public string? Architecture { get; set; }
+    public string Architecture { get; set; } = string.Empty;
 
     /// <summary>
     /// The os field specifies the operating system, for example linux or windows.
     /// </summary>
     [JsonProperty("os")]
-    public string? Os { get; set; }
+    public string Os { get; set; } = string.Empty;
 
     /// <summary>
     /// The optional os.version field specifies the operating system version, for example 10.0.10586.
@@ -26,7 +26,7 @@ public class ManifestPlatform
     /// The optional os.features field specifies an array of strings, each listing a required OS feature (for example on Windows win32k)
     /// </summary>
     [JsonProperty("os.features")]
-    public string? OsFeatures { get; set; }
+    public string[] OsFeatures { get; set; } = Array.Empty<string>();
 
     /// <summary>
     /// The optional variant field specifies a variant of the CPU, for example armv6l to specify a particular CPU variant of the ARM CPU.

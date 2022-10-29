@@ -1,4 +1,7 @@
 ﻿using Microsoft.Rest;
+using Microsoft.Rest.Serialization;
+using Newtonsoft.Json;
+using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
  
@@ -9,6 +12,22 @@ public static class BlobOperationsExtensions
         HttpOperationResponse<Stream> response =
             await operations.GetWithHttpMessagesAsync(repositoryName, digest, cancellationToken).ConfigureAwait(false);
         return new BlobStream(response);
+    }
+
+    public static async Task<Image> GetImage(this IBlobOperations operations, string repositoryName, string digest, CancellationToken cancellationToken = default)
+    {
+        using Stream blob = await operations.GetAsync(repositoryName, digest, cancellationToken);
+        using StreamReader reader = new(blob);
+        string content = await reader.ReadToEndAsync();
+        try
+        {
+            return SafeJsonConvert.DeserializeObject<Image>(content);
+        }
+        catch (JsonReaderException e)
+        {
+            throw new JsonSerializationException(
+                "The result could not be deserialized into an image model. Verify the digest represents an image config and not a layer.", e);
+        }
     }
 
     private class BlobStream : Stream
