@@ -5,7 +5,7 @@ namespace Valleysoft.DockerRegistryClient.Models;
 public class ManifestConfig
 {
     /// <summary>
-    /// The MIME type of the referenced object. This should generally be application/vnd.docker.image.rootfs.diff.tar.gzip. Layers of type application/vnd.docker.image.rootfs.foreign.diff.tar.gzip may be pulled from a remote location but they should never be pushed.
+    /// The MIME type of the referenced object.
     /// </summary>
     [JsonProperty("mediaType")]
     public string? MediaType { get; set; }
