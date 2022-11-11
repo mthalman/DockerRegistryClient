@@ -22,6 +22,19 @@ internal class ManifestOperations : IServiceOperations<DockerRegistryClient>, IM
             GetResult,
             cancellationToken);
 
+    public async Task<HttpOperationResponse<bool>> ExistsWithHttpMessagesAsync(
+        string repositoryName, string digest, CancellationToken cancellationToken = default)
+    {
+        HttpRequestMessage request = CreateGetRequestMessage(GetManifestUri(repositoryName, digest), HttpMethod.Head);
+        HttpResponseMessage response = await this.Client.SendRequestAsync(request, ignoreUnsuccessfulResponse: true, cancellationToken).ConfigureAwait(false);
+        return new HttpOperationResponse<bool>
+        {
+            Body = response.IsSuccessStatusCode,
+            Request = request,
+            Response = response
+        };
+    }
+
     public Task<HttpOperationResponse<string>> GetDigestWithHttpMessagesAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default) =>
         this.Client.SendRequestAsync(
             CreateGetRequestMessage(GetManifestUri(repositoryName, tagOrDigest), HttpMethod.Head),
