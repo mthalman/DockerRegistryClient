@@ -65,11 +65,11 @@ public class DockerRegistryClient : ServiceClient<DockerRegistryClient>
     internal async Task<HttpOperationResponse<T>> SendRequestAsync<T>(HttpRequestMessage request,
         Func<HttpResponseMessage, string, T>? getResult, CancellationToken cancellationToken = default)
     {
-        HttpResponseMessage response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+        HttpResponseMessage response = await SendRequestAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
         return await GetStringContentAsync(request, response, getResult).ConfigureAwait(false);
     }
 
-    internal async Task<HttpResponseMessage> SendRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
+    internal async Task<HttpResponseMessage> SendRequestAsync(HttpRequestMessage request, bool ignoreUnsuccessfulResponse = false, CancellationToken cancellationToken = default)
     {
         if (this.credentials != null)
         {
@@ -79,6 +79,12 @@ public class DockerRegistryClient : ServiceClient<DockerRegistryClient>
 
         cancellationToken.ThrowIfCancellationRequested();
         HttpResponseMessage response = await this.HttpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        if (ignoreUnsuccessfulResponse)
+        {
+            return response;
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             cancellationToken.ThrowIfCancellationRequested();
