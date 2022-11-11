@@ -14,7 +14,7 @@ public static class BlobOperationsExtensions
         return new BlobStream(response);
     }
 
-    public static async Task<Image> GetImage(this IBlobOperations operations, string repositoryName, string digest, CancellationToken cancellationToken = default)
+    public static async Task<Image> GetImageAsync(this IBlobOperations operations, string repositoryName, string digest, CancellationToken cancellationToken = default)
     {
         using Stream blob = await operations.GetAsync(repositoryName, digest, cancellationToken);
         using StreamReader reader = new(blob);
