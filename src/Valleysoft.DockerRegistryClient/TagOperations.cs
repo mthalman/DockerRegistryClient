@@ -3,11 +3,11 @@ using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
  
-internal class TagOperations : IServiceOperations<DockerRegistryClient>, ITagOperations
+internal class TagOperations : IServiceOperations<RegistryClient>, ITagOperations
 {
-    public DockerRegistryClient Client { get; }
+    public RegistryClient Client { get; }
 
-    public TagOperations(DockerRegistryClient client)
+    public TagOperations(RegistryClient client)
     {
         this.Client = client;
     }
@@ -32,7 +32,7 @@ internal class TagOperations : IServiceOperations<DockerRegistryClient>, ITagOpe
 
     private static Page<RepositoryTags> GetResult(HttpResponseMessage response, string content)
     {
-        string? nextLink = DockerRegistryClient.GetNextLinkUrl(response);
-        return new Page<RepositoryTags>(DockerRegistryClient.GetResult<RepositoryTags>(response, content), nextLink);
+        string? nextLink = RegistryClient.GetNextLinkUrl(response);
+        return new Page<RepositoryTags>(RegistryClient.GetResult<RepositoryTags>(response, content), nextLink);
     }
 }

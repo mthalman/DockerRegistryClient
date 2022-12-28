@@ -3,11 +3,11 @@ using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
  
-internal class CatalogOperations : IServiceOperations<DockerRegistryClient>, ICatalogOperations
+internal class CatalogOperations : IServiceOperations<RegistryClient>, ICatalogOperations
 {
-    public DockerRegistryClient Client { get; }
+    public RegistryClient Client { get; }
 
-    public CatalogOperations(DockerRegistryClient client)
+    public CatalogOperations(RegistryClient client)
     {
         this.Client = client;
     }
@@ -30,7 +30,7 @@ internal class CatalogOperations : IServiceOperations<DockerRegistryClient>, ICa
 
     private static Page<Catalog> GetResult(HttpResponseMessage response, string content)
     {
-        string? nextLink = DockerRegistryClient.GetNextLinkUrl(response);
-        return new Page<Catalog>(DockerRegistryClient.GetResult<Catalog>(response, content), nextLink);
+        string? nextLink = RegistryClient.GetNextLinkUrl(response);
+        return new Page<Catalog>(RegistryClient.GetResult<Catalog>(response, content), nextLink);
     }
 }

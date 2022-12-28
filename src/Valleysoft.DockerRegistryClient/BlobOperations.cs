@@ -2,11 +2,11 @@
 
 namespace Valleysoft.DockerRegistryClient;
 
-internal class BlobOperations : IServiceOperations<DockerRegistryClient>, IBlobOperations
+internal class BlobOperations : IServiceOperations<RegistryClient>, IBlobOperations
 {
-    public DockerRegistryClient Client { get; }
+    public RegistryClient Client { get; }
 
-    public BlobOperations(DockerRegistryClient client)
+    public BlobOperations(RegistryClient client)
     {
         this.Client = client;
     }
@@ -16,7 +16,7 @@ internal class BlobOperations : IServiceOperations<DockerRegistryClient>, IBlobO
     {
         HttpRequestMessage request = new(HttpMethod.Get, $"{this.Client.BaseUri.AbsoluteUri}/v2/{repositoryName}/blobs/{digest}");
         HttpResponseMessage response = await this.Client.SendRequestAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return await DockerRegistryClient.GetStreamContentAsync(request, response).ConfigureAwait(false);
+        return await RegistryClient.GetStreamContentAsync(request, response).ConfigureAwait(false);
     }
 
     public async Task<HttpOperationResponse<bool>> ExistsWithHttpMessagesAsync(

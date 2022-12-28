@@ -3,18 +3,18 @@ using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
 
-public class DockerRegistryException : HttpOperationException
+public class RegistryException : HttpOperationException
 {
-    public DockerRegistryException()
+    public RegistryException()
     {
     }
 
-    public DockerRegistryException(string message)
+    public RegistryException(string message)
         : base(message)
     {
     }
         
-    public DockerRegistryException(string message, Exception innerException)
+    public RegistryException(string message, Exception innerException)
         : base(message, innerException)
     {
     }

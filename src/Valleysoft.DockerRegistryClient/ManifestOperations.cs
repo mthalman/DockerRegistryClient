@@ -5,13 +5,13 @@ using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
  
-internal class ManifestOperations : IServiceOperations<DockerRegistryClient>, IManifestOperations
+internal class ManifestOperations : IServiceOperations<RegistryClient>, IManifestOperations
 {
     private const string DockerContentDigestHeader = "Docker-Content-Digest";
 
-    public DockerRegistryClient Client { get; }
+    public RegistryClient Client { get; }
 
-    public ManifestOperations(DockerRegistryClient client)
+    public ManifestOperations(RegistryClient client)
     {
         this.Client = client;
     }
