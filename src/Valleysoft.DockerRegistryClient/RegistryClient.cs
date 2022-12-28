@@ -5,7 +5,7 @@ using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
  
-public class DockerRegistryClient : ServiceClient<DockerRegistryClient>
+public class RegistryClient : ServiceClient<RegistryClient>
 {
     public string Registry { get; }
     public Uri BaseUri { get; }
@@ -16,33 +16,33 @@ public class DockerRegistryClient : ServiceClient<DockerRegistryClient>
 
     private readonly ServiceClientCredentials? credentials;
 
-    public DockerRegistryClient(string registry)
+    public RegistryClient(string registry)
         : this(registry, null)
     {
     }
 
-    public DockerRegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials)
+    public RegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials)
         : this(registry, serviceClientCredentials, (HttpClientHandler?)null)
     {
             
     }
 
-    public DockerRegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials, HttpClient httpClient, bool disposeHttpClient = true)
+    public RegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials, HttpClient httpClient, bool disposeHttpClient = true)
         : this(registry, serviceClientCredentials, httpClient, disposeHttpClient, null)
     {
     }
 
-    public DockerRegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials, params DelegatingHandler[] handlers)
+    public RegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials, params DelegatingHandler[] handlers)
         : this(registry, serviceClientCredentials, null, handlers)
     {
     }
 
-    public DockerRegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials, HttpClientHandler? rootHandler, params DelegatingHandler[] handlers)
+    public RegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials, HttpClientHandler? rootHandler, params DelegatingHandler[] handlers)
         : this(registry, serviceClientCredentials, null, true, rootHandler, handlers)
     {
     }
 
-    private DockerRegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials, HttpClient? httpClient, bool disposeHttpClient, HttpClientHandler? rootHandler, params DelegatingHandler[] handlers)
+    private RegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials, HttpClient? httpClient, bool disposeHttpClient, HttpClientHandler? rootHandler, params DelegatingHandler[] handlers)
         : base(httpClient, disposeHttpClient)
     {
         this.InitializeHttpClient(httpClient, rootHandler, handlers.Append(new OAuthDelegatingHandler()).ToArray());
@@ -111,8 +111,8 @@ public class DockerRegistryClient : ServiceClient<DockerRegistryClient>
 #endif
             ErrorResult errorResult = SafeJsonConvert.DeserializeObject<ErrorResult>(errorContent);
 
-            throw new DockerRegistryException(
-                $"Response status code does not indicate success: {response.StatusCode}. See {nameof(DockerRegistryException.Errors)} property for more detail. ({response.ReasonPhrase})")
+            throw new RegistryException(
+                $"Response status code does not indicate success: {response.StatusCode}. See {nameof(RegistryException.Errors)} property for more detail. ({response.ReasonPhrase})")
             {
                 Errors = errorResult.Errors,
                 Body = errorContent,
