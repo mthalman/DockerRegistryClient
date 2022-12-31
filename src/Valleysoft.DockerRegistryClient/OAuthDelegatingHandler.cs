@@ -23,11 +23,6 @@ internal class OAuthDelegatingHandler : DelegatingHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         authorization = request.Headers.Authorization;
-
-        // For the initial request, don't provide authorization. Not all registries will return 401 if Authorization
-        // is provided which requires an OAuth challenge. For example, ghcr.io will return a 403 in that case and won't
-        // return a challenge.
-        request.Headers.Authorization = null;
         
         HttpResponseMessage response = await base.SendAsync(request, cancellationToken);
 
@@ -35,6 +30,13 @@ internal class OAuthDelegatingHandler : DelegatingHandler
         {
             request = await GetAuthenticatedRequestAsync(response, request, cancellationToken).ConfigureAwait(false);
             response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        else if (authorization is not null && response.StatusCode == HttpStatusCode.Forbidden)
+        {
+            // Not all registries will return 401 if Authorization is provided which requires an OAuth challenge.
+            // For example, ghcr.io will return a 403 in that case and won't return a challenge. In such cases,
+            // set the Authorization header to null and attempt again.
+            request.Headers.Authorization = null;
         }
 
         return response;

@@ -4,7 +4,7 @@ using Newtonsoft.Json;
 using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
- 
+
 public class RegistryClient : ServiceClient<RegistryClient>
 {
     public string Registry { get; }
@@ -71,7 +71,7 @@ public class RegistryClient : ServiceClient<RegistryClient>
 
     internal async Task<HttpResponseMessage> SendRequestAsync(HttpRequestMessage request, bool ignoreUnsuccessfulResponse = false, CancellationToken cancellationToken = default)
     {
-        if (this.credentials != null)
+        if (this.credentials is not null && request.Headers.Authorization is null)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await this.credentials.ProcessHttpRequestAsync(request, cancellationToken).ConfigureAwait(false);
