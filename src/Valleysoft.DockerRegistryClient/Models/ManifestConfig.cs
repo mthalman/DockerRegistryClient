@@ -14,10 +14,10 @@ public class ManifestConfig
     /// The size in bytes of the object. This field exists so that a client will have an expected size for the content before validating. If the length of the retrieved content does not match the specified length, the content should not be trusted.
     /// </summary>
     [JsonProperty("size")]
-    public int? Size { get; set; }
+    public long? Size { get; set; }
 
     /// <summary>
-    /// The digest of the content, as defined by the Registry V2 HTTP API Specificiation. https://docs.docker.com/registry/spec/api/#digest-parameter
+    /// The digest of the content, as defined by the Registry V2 HTTP API Specification. https://docs.docker.com/registry/spec/api/#digest-parameter
     /// </summary>
     [JsonProperty("digest")]
     public string? Digest { get; set; }
