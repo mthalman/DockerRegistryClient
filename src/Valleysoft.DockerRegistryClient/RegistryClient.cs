@@ -113,7 +113,7 @@ public class RegistryClient : ServiceClient<RegistryClient>
             string errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 #endif
 
-            ErrorResult errorResult;
+            ErrorResult? errorResult;
 
             // Handle special case for some registries like mcr.microsoft.com that can return an XML error response
             // instead of JSON.
@@ -123,13 +123,13 @@ public class RegistryClient : ServiceClient<RegistryClient>
             }
             else
             {
-                errorResult = SafeJsonConvert.DeserializeObject<ErrorResult>(errorContent);
+                errorResult = SafeJsonConvert.DeserializeObject<ErrorResult?>(errorContent);
             }
 
             throw new RegistryException(
                 $"Response status code does not indicate success: {response.StatusCode}. See {nameof(RegistryException.Errors)} property for more detail. ({response.ReasonPhrase})")
             {
-                Errors = errorResult.Errors,
+                Errors = errorResult?.Errors ?? Enumerable.Empty<Error>(),
                 Body = errorContent,
                 Request = new HttpRequestMessageWrapper(request, requestContent),
                 Response = new HttpResponseMessageWrapper(response, errorContent)
