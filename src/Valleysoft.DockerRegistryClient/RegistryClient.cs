@@ -1,12 +1,15 @@
 ﻿using Microsoft.Rest;
 using Microsoft.Rest.Serialization;
 using Newtonsoft.Json;
+using System.Xml.Linq;
 using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
 
 public class RegistryClient : ServiceClient<RegistryClient>
 {
+    private const string XmlMediaType = "application/xml";
+
     public string Registry { get; }
     public Uri BaseUri { get; }
     public IBlobOperations Blobs { get; }
@@ -109,7 +112,19 @@ public class RegistryClient : ServiceClient<RegistryClient>
 #else
             string errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 #endif
-            ErrorResult errorResult = SafeJsonConvert.DeserializeObject<ErrorResult>(errorContent);
+
+            ErrorResult errorResult;
+
+            // Handle special case for some registries like mcr.microsoft.com that can return an XML error response
+            // instead of JSON.
+            if (response.Content.Headers.ContentType?.MediaType == XmlMediaType)
+            {
+                errorResult = ParseXmlErrorResult(errorContent);
+            }
+            else
+            {
+                errorResult = SafeJsonConvert.DeserializeObject<ErrorResult>(errorContent);
+            }
 
             throw new RegistryException(
                 $"Response status code does not indicate success: {response.StatusCode}. See {nameof(RegistryException.Errors)} property for more detail. ({response.ReasonPhrase})")
@@ -124,6 +139,43 @@ public class RegistryClient : ServiceClient<RegistryClient>
 
         return response;
     }
+
+    private static ErrorResult ParseXmlErrorResult(string errorContent)
+    {
+        ErrorResult errorResult;
+        XDocument errorContentXml = XDocument.Parse(errorContent);
+        if (errorContentXml.Root is null)
+        {
+            throw new SerializationException("Unable to parse the error response.", errorContent, null);
+        }
+
+        // Some registries like mcr.microsoft.com only return a single error element in the root of the XML
+        // instead of a collection of errors so we need to handle both cases.
+        if (errorContentXml.Root.Name == "Errors")
+        {
+            errorResult = new ErrorResult()
+            {
+                Errors = errorContentXml.Root.Elements("Error").Select(error => CreateErrorFromXmlElement(error)).ToArray()
+            };
+        }
+        else
+        {
+            XElement errorElement = errorContentXml.Root;
+            errorResult = new ErrorResult()
+            {
+                Errors = new Error[] { CreateErrorFromXmlElement(errorElement) }
+            };
+        }
+
+        return errorResult;
+    }
+
+    private static Error CreateErrorFromXmlElement(XElement errorElement) =>
+        new()
+        {
+            Code = errorElement.Element("Code")?.Value,
+            Message = errorElement.Element("Message")?.Value
+        };
 
     internal static async Task<HttpOperationResponse<T>> GetStringContentAsync<T>(
         HttpRequestMessage request, HttpResponseMessage response, Func<HttpResponseMessage, string, T>? getResult)
