@@ -18,15 +18,15 @@ internal class CatalogOperations : IServiceOperations<RegistryClient>, ICatalogO
         return GetNextWithHttpMessagesAsync(url, cancellationToken);
     }
 
-    public Task<HttpOperationResponse<Page<Catalog>>> GetNextWithHttpMessagesAsync(string nextPageLink, CancellationToken cancellationToken = default)
-    {
-        return this.Client.SendRequestAsync(
-            new HttpRequestMessage(
-                HttpMethod.Get,
-                new Uri(UrlHelper.Concat(this.Client.BaseUri.AbsoluteUri, nextPageLink))),
-            GetResult,
-            cancellationToken);
-    }
+    public Task<HttpOperationResponse<Page<Catalog>>> GetNextWithHttpMessagesAsync(string nextPageLink, CancellationToken cancellationToken = default) =>
+        OperationsHelper.HandleNotFoundErrorAsync(
+            "Catalog page not found.",
+            () => this.Client.SendRequestAsync(
+                new HttpRequestMessage(
+                    HttpMethod.Get,
+                    new Uri(UrlHelper.Concat(this.Client.BaseUri.AbsoluteUri, nextPageLink))),
+                GetResult,
+                cancellationToken));
 
     private static Page<Catalog> GetResult(HttpResponseMessage response, string content)
     {

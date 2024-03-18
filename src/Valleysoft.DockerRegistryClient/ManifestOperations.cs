@@ -4,9 +4,10 @@ using System.Net.Http.Headers;
 using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
- 
+
 internal class ManifestOperations : IServiceOperations<RegistryClient>, IManifestOperations
 {
+    private const string NotFoundMessage = "Manifest not found.";
     private const string DockerContentDigestHeader = "Docker-Content-Digest";
 
     public RegistryClient Client { get; }
@@ -17,10 +18,12 @@ internal class ManifestOperations : IServiceOperations<RegistryClient>, IManifes
     }
 
     public Task<HttpOperationResponse<ManifestInfo>> GetWithHttpMessagesAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default) =>
-        this.Client.SendRequestAsync(
-            CreateGetRequestMessage(GetManifestUri(repositoryName, tagOrDigest), HttpMethod.Get),
-            GetResult,
-            cancellationToken);
+        OperationsHelper.HandleNotFoundErrorAsync(
+            NotFoundMessage,
+            () => this.Client.SendRequestAsync(
+                CreateGetRequestMessage(GetManifestUri(repositoryName, tagOrDigest), HttpMethod.Get),
+                GetResult,
+                cancellationToken));
 
     public async Task<HttpOperationResponse<bool>> ExistsWithHttpMessagesAsync(
         string repositoryName, string digest, CancellationToken cancellationToken = default)
@@ -36,10 +39,12 @@ internal class ManifestOperations : IServiceOperations<RegistryClient>, IManifes
     }
 
     public Task<HttpOperationResponse<string>> GetDigestWithHttpMessagesAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default) =>
-        this.Client.SendRequestAsync(
-            CreateGetRequestMessage(GetManifestUri(repositoryName, tagOrDigest), HttpMethod.Head),
-            (response, content) => GetDigest(response),
-            cancellationToken);
+        OperationsHelper.HandleNotFoundErrorAsync(
+            NotFoundMessage,
+            () => this.Client.SendRequestAsync(
+                CreateGetRequestMessage(GetManifestUri(repositoryName, tagOrDigest), HttpMethod.Head),
+                (response, content) => GetDigest(response),
+                cancellationToken));
 
     private Uri GetManifestUri(string repositoryName, string tagOrDigest) =>
         new(this.Client.BaseUri.AbsoluteUri + $"v2/{repositoryName}/manifests/{tagOrDigest}");

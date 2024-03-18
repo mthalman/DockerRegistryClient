@@ -23,7 +23,10 @@ internal class BlobOperations : IServiceOperations<RegistryClient>, IBlobOperati
     {
         HttpRequestMessage request = new(HttpMethod.Get, $"{this.Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/{digest}");
         HttpResponseMessage response = await this.Client.SendRequestAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return await RegistryClient.GetStreamContentAsync(request, response).ConfigureAwait(false);
+
+        return await OperationsHelper.HandleNotFoundErrorAsync(
+            "Blob not found.",
+            () => RegistryClient.GetStreamContentAsync(request, response)).ConfigureAwait(false);
     }
 
     /// <summary>
