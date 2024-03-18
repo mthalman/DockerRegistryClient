@@ -22,12 +22,14 @@ internal class TagOperations : IServiceOperations<RegistryClient>, ITagOperation
     public Task<HttpOperationResponse<Page<RepositoryTags>>> GetNextWithHttpMessagesAsync(
         string nextPageLink, CancellationToken cancellationToken = default)
     {
-        return this.Client.SendRequestAsync(
-            new HttpRequestMessage(
-                HttpMethod.Get,
-                new Uri(UrlHelper.Concat(this.Client.BaseUri.AbsoluteUri, nextPageLink))),
-            GetResult,
-            cancellationToken);
+        return OperationsHelper.HandleNotFoundErrorAsync(
+            "Repository not found.",
+            () => this.Client.SendRequestAsync(
+                new HttpRequestMessage(
+                    HttpMethod.Get,
+                    new Uri(UrlHelper.Concat(this.Client.BaseUri.AbsoluteUri, nextPageLink))),
+                GetResult,
+                cancellationToken));
     }
 
     private static Page<RepositoryTags> GetResult(HttpResponseMessage response, string content)
