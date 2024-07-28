@@ -1,5 +1,4 @@
-﻿using Microsoft.Rest;
-using System.Net;
+﻿using System.Net;
 
 namespace Valleysoft.DockerRegistryClient;
 
@@ -11,7 +10,7 @@ internal static class OperationsHelper
         {
             return await func().ConfigureAwait(false);
         }
-        catch (RegistryException ex) when (ex.Response.StatusCode == HttpStatusCode.NotFound)
+        catch (RegistryException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
             throw new RegistryException(errorMessage, ex);
         }

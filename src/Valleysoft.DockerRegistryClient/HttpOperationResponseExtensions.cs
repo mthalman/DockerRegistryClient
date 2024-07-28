@@ -1,6 +1,4 @@
-﻿using Microsoft.Rest;
-
-namespace Valleysoft.DockerRegistryClient;
+﻿namespace Valleysoft.DockerRegistryClient;
 
 internal static class HttpOperationResponseExtensions
 {

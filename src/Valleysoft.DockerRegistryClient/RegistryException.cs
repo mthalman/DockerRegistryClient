@@ -1,9 +1,9 @@
-﻿using Microsoft.Rest;
+﻿using System.Net;
 using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
 
-public class RegistryException : HttpOperationException
+public class RegistryException : Exception
 {
     public RegistryException()
     {
@@ -20,4 +20,6 @@ public class RegistryException : HttpOperationException
     }
 
     public IEnumerable<Error> Errors { get; set; } = Enumerable.Empty<Error>();
+
+    public HttpStatusCode? StatusCode { get; set; }
 }

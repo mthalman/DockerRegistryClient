@@ -1,13 +1,14 @@
-﻿using Microsoft.Rest;
-using Microsoft.Rest.Serialization;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
+using System.Xml;
 using System.Xml.Linq;
+using Valleysoft.DockerRegistryClient.Credentials;
 using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
 
-public class RegistryClient : ServiceClient<RegistryClient>
+public class RegistryClient : IDisposable
 {
+    private readonly bool disposeHttpClient;
     private const string XmlMediaType = "application/xml";
 
     public string Registry { get; }
@@ -16,45 +17,40 @@ public class RegistryClient : ServiceClient<RegistryClient>
     public ICatalogOperations Catalog { get; }
     public ITagOperations Tags { get; }
     public IManifestOperations Manifests { get; }
+    public HttpClient HttpClient { get; }
 
-    private readonly ServiceClientCredentials? credentials;
+    private readonly IRegistryClientCredentials? credentials;
 
     public RegistryClient(string registry)
-        : this(registry, null)
+        : this(registry, serviceClientCredentials: null)
     {
     }
 
-    public RegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials)
-        : this(registry, serviceClientCredentials, (HttpClientHandler?)null)
+    public RegistryClient(string registry, IRegistryClientCredentials? serviceClientCredentials)
+        : this(registry, serviceClientCredentials, httpClient: null, disposeHttpClient: false)
     {
             
     }
 
-    public RegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials, HttpClient httpClient, bool disposeHttpClient = true)
-        : this(registry, serviceClientCredentials, httpClient, disposeHttpClient, null)
+    private RegistryClient(string registry, IRegistryClientCredentials? serviceClientCredentials, HttpClient? httpClient, bool disposeHttpClient)
     {
-    }
+        if (httpClient is null)
+        {
+            this.HttpClient = new HttpClient(new OAuthDelegatingHandler(new HttpClientHandler()));
+            disposeHttpClient = true;
 
-    public RegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials, params DelegatingHandler[] handlers)
-        : this(registry, serviceClientCredentials, null, handlers)
-    {
-    }
+        }
+        else
+        {
+            HttpClient = httpClient;
+        }
 
-    public RegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials, HttpClientHandler? rootHandler, params DelegatingHandler[] handlers)
-        : this(registry, serviceClientCredentials, null, true, rootHandler, handlers)
-    {
-    }
-
-    private RegistryClient(string registry, ServiceClientCredentials? serviceClientCredentials, HttpClient? httpClient, bool disposeHttpClient, HttpClientHandler? rootHandler, params DelegatingHandler[] handlers)
-        : base(httpClient, disposeHttpClient)
-    {
-        this.InitializeHttpClient(httpClient, rootHandler, handlers.Append(new OAuthDelegatingHandler()).ToArray());
+        this.disposeHttpClient = disposeHttpClient;
 
         this.Registry = registry ?? throw new ArgumentNullException(nameof(registry));
         this.BaseUri = new Uri($"https://{this.Registry}");
 
         this.credentials = serviceClientCredentials;
-        serviceClientCredentials?.InitializeServiceClient(this);
 
         this.Blobs = new BlobOperations(this);
         this.Catalog = new CatalogOperations(this);
@@ -123,16 +119,14 @@ public class RegistryClient : ServiceClient<RegistryClient>
             }
             else
             {
-                errorResult = SafeJsonConvert.DeserializeObject<ErrorResult?>(errorContent);
+                errorResult = JsonConvert.DeserializeObject<ErrorResult?>(errorContent);
             }
 
             throw new RegistryException(
                 $"Response status code does not indicate success: {response.StatusCode}. See {nameof(RegistryException.Errors)} property for more detail. ({response.ReasonPhrase})")
             {
                 Errors = errorResult?.Errors ?? Enumerable.Empty<Error>(),
-                Body = errorContent,
-                Request = new HttpRequestMessageWrapper(request, requestContent),
-                Response = new HttpResponseMessageWrapper(response, errorContent)
+                StatusCode = response.StatusCode
             };
         }
         response.EnsureSuccessStatusCode();
@@ -146,7 +140,7 @@ public class RegistryClient : ServiceClient<RegistryClient>
         XDocument errorContentXml = XDocument.Parse(errorContent);
         if (errorContentXml.Root is null)
         {
-            throw new SerializationException("Unable to parse the error response.", errorContent, null);
+            throw new XmlException($"Unable to parse the error response:{Environment.NewLine}{errorContent}", null);
         }
 
         // Some registries like mcr.microsoft.com only return a single error element in the root of the XML
@@ -186,16 +180,11 @@ public class RegistryClient : ServiceClient<RegistryClient>
 
         try
         {
-            return new HttpOperationResponse<T>
-            {
-                Body = getResult(response, content),
-                Request = request,
-                Response = response
-            };
+            return new HttpOperationResponse<T>(request, response, getResult(response, content));
         }
         catch (JsonException e)
         {
-            throw new SerializationException("Unable to deserialize the response.", content, e);
+            throw new JsonSerializationException($"Unable to deserialize the response:{Environment.NewLine}{content}", e);
         }
     }
 
@@ -203,16 +192,11 @@ public class RegistryClient : ServiceClient<RegistryClient>
     {
         Stream stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 
-        return new HttpOperationResponse<Stream>
-        {
-            Body = stream,
-            Request = request,
-            Response = response
-        };
+        return new HttpOperationResponse<Stream>(request, response, stream);
     }
 
     internal static T GetResult<T>(HttpResponseMessage response, string content) =>
-        SafeJsonConvert.DeserializeObject<T>(content);
+        JsonConvert.DeserializeObject<T>(content) ?? throw new JsonSerializationException($"Unable to deserialize the content:{Environment.NewLine}{content}");
 
     internal static string? GetNextLinkUrl(HttpResponseMessage response)
     {
@@ -228,17 +212,21 @@ public class RegistryClient : ServiceClient<RegistryClient>
 
                     return null;
                 })
-                .FirstOrDefault(link => link?.Relationship == "next");
-
-            if (nextLink is null)
-            {
-                throw new InvalidOperationException(
-                    $"Unable to parse link header '{string.Join(", ", linkValues.ToArray())}'");
-            }
-                
+                .FirstOrDefault(link => link?.Relationship == "next") ??
+                    throw new InvalidOperationException($"Unable to parse link header '{string.Join(", ", linkValues.ToArray())}'");
             return nextLink.Url;
         }
 
         return null;
+    }
+
+    public void Dispose()
+    {
+        if (this.disposeHttpClient)
+        {
+            this.HttpClient.Dispose();
+        }
+        
+        GC.SuppressFinalize(this);
     }
 }

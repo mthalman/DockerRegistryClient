@@ -1,6 +1,4 @@
-﻿using Microsoft.Rest;
-using Microsoft.Rest.Serialization;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Authentication;
@@ -53,13 +51,7 @@ internal class OAuthDelegatingHandler : DelegatingHandler
     {
         AuthenticationHeaderValue? bearerHeader = response.Headers.WwwAuthenticate
             .AsEnumerable()
-            .FirstOrDefault(header => header.Scheme == HttpBearerChallenge.Bearer);
-
-        if (bearerHeader is null)
-        {
-            throw new AuthenticationException($"Bearer header not contained in unauthorized response from {response.RequestMessage?.RequestUri}");
-        }
-
+            .FirstOrDefault(header => header.Scheme == HttpBearerChallenge.Bearer) ?? throw new AuthenticationException($"Bearer header not contained in unauthorized response from {response.RequestMessage?.RequestUri}");
         HttpBearerChallenge challenge = HttpBearerChallenge.Parse(bearerHeader.Parameter);
 
         HttpRequestMessage authenticateRequest;
@@ -71,7 +63,7 @@ internal class OAuthDelegatingHandler : DelegatingHandler
                 {
                     { "client_id", "registry-client" },
                     { "grant_type", "refresh_token" },
-                    { "refresh_token", authorization.Parameter },
+                    { "refresh_token", authorization.Parameter ?? string.Empty },
                     { "scope", challenge.Scope },
                     { "service", challenge.Service },
                 })
@@ -98,11 +90,11 @@ internal class OAuthDelegatingHandler : DelegatingHandler
 
         try
         {
-            return SafeJsonConvert.DeserializeObject<OAuthToken>(tokenContent);
+            return JsonConvert.DeserializeObject<OAuthToken>(tokenContent) ?? throw new JsonSerializationException($"Unable to deserialize response:{Environment.NewLine}{tokenContent}");
         }
         catch (JsonException e)
         {
-            throw new SerializationException("Unable to deserialize the response.", tokenContent, e);
+            throw new JsonSerializationException($"Unable to deserialize the response:{Environment.NewLine}{tokenContent}", e);
         }
     }
 }

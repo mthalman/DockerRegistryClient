@@ -1,9 +1,8 @@
-﻿using Microsoft.Rest;
-using System.Net.Http.Headers;
+﻿using System.Net.Http.Headers;
 
 namespace Valleysoft.DockerRegistryClient;
 
-internal class BlobOperations : IServiceOperations<RegistryClient>, IBlobOperations
+internal class BlobOperations : IBlobOperations
 {
     public RegistryClient Client { get; }
 
@@ -40,12 +39,7 @@ internal class BlobOperations : IServiceOperations<RegistryClient>, IBlobOperati
     {
         HttpRequestMessage request = new(HttpMethod.Head, $"{this.Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/{digest}");
         HttpResponseMessage response = await this.Client.SendRequestAsync(request, ignoreUnsuccessfulResponse: true, cancellationToken).ConfigureAwait(false);
-        return new HttpOperationResponse<bool>
-        {
-            Body = response.IsSuccessStatusCode,
-            Request = request,
-            Response = response
-        };
+        return new HttpOperationResponse<bool>(request, response, response.IsSuccessStatusCode);
     }
 
     /// <summary>
@@ -59,11 +53,7 @@ internal class BlobOperations : IServiceOperations<RegistryClient>, IBlobOperati
     {
         HttpRequestMessage request = new(HttpMethod.Delete, $"{this.Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/{digest}");
         HttpResponseMessage response = await this.Client.SendRequestAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return new HttpOperationResponse
-        {
-            Request = request,
-            Response = response
-        };
+        return new HttpOperationResponse(request, response);
     }
 
     /// <summary>
@@ -76,11 +66,7 @@ internal class BlobOperations : IServiceOperations<RegistryClient>, IBlobOperati
     {
         HttpRequestMessage request = new(HttpMethod.Get, new Uri(Client.BaseUri, uploadLocation));
         HttpResponseMessage response = await this.Client.SendRequestAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return new HttpOperationResponse
-        {
-            Request = request,
-            Response = response
-        };
+        return new HttpOperationResponse(request, response);
     }
 
     /// <summary>
@@ -93,11 +79,7 @@ internal class BlobOperations : IServiceOperations<RegistryClient>, IBlobOperati
     {
         HttpRequestMessage request = new(HttpMethod.Delete, new Uri(Client.BaseUri, uploadLocation));
         HttpResponseMessage response = await this.Client.SendRequestAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return new HttpOperationResponse
-        {
-            Request = request,
-            Response = response
-        };
+        return new HttpOperationResponse(request, response);
     }
 
     /// <summary>
@@ -112,16 +94,11 @@ internal class BlobOperations : IServiceOperations<RegistryClient>, IBlobOperati
             $"{Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/uploads/");
 
         HttpResponseMessage response = await this.Client.SendRequestAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return new HttpOperationResponse<BlobUploadContext>
-        {
-            // Cache the authorization header for subsequent requests. This avoids re-requesting bearer tokens
-            // for each request within a given client instance. This is particularly important for upload scenarios
-            // where a bunch of data may be sent in the initial request only to be rejected for auth and forced to
-            // upload again.
-            Body = new BlobUploadContext(request.Headers.Authorization),
-            Request = request,
-            Response = response
-        };
+        // Cache the authorization header for subsequent requests. This avoids re-requesting bearer tokens
+        // for each request within a given client instance. This is particularly important for upload scenarios
+        // where a bunch of data may be sent in the initial request only to be rejected for auth and forced to
+        // upload again.
+        return new HttpOperationResponse<BlobUploadContext>(request, response, new BlobUploadContext(request.Headers.Authorization));
     }
 
     /// <summary>
@@ -147,11 +124,7 @@ internal class BlobOperations : IServiceOperations<RegistryClient>, IBlobOperati
         request.Headers.Authorization = uploadContext.Authorization;
 
         HttpResponseMessage response = await this.Client.SendRequestAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return new HttpOperationResponse
-        {
-            Request = request,
-            Response = response
-        };
+        return new HttpOperationResponse(request, response);
     }
 
     /// <summary>
@@ -177,11 +150,7 @@ internal class BlobOperations : IServiceOperations<RegistryClient>, IBlobOperati
         request.Headers.Authorization = uploadContext.Authorization;
 
         HttpResponseMessage response = await this.Client.SendRequestAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return new HttpOperationResponse
-        {
-            Request = request,
-            Response = response
-        };
+        return new HttpOperationResponse(request, response);
     }
 
     private static StreamContent CreateStreamContent(Stream stream)

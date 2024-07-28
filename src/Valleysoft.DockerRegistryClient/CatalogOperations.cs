@@ -1,9 +1,8 @@
-﻿using Microsoft.Rest;
-using Valleysoft.DockerRegistryClient.Models;
+﻿using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
  
-internal class CatalogOperations : IServiceOperations<RegistryClient>, ICatalogOperations
+internal class CatalogOperations : ICatalogOperations
 {
     public RegistryClient Client { get; }
 
