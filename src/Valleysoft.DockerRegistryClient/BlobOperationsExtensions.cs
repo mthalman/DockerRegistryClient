@@ -1,6 +1,4 @@
-﻿using Microsoft.Rest;
-using Microsoft.Rest.Serialization;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using System.Text.RegularExpressions;
 using Valleysoft.DockerRegistryClient.Models;
 
@@ -66,14 +64,14 @@ public static class BlobOperationsExtensions
         using Stream blob = await operations.GetAsync(repositoryName, digest, cancellationToken);
         using StreamReader reader = new(blob);
         string content = await reader.ReadToEndAsync();
+        const string ErrorMessage = "The result could not be deserialized into an image model. Verify the digest represents an image config and not a layer.";
         try
         {
-            return SafeJsonConvert.DeserializeObject<Image>(content);
+            return JsonConvert.DeserializeObject<Image>(content) ?? throw new JsonSerializationException(ErrorMessage);
         }
         catch (JsonReaderException e)
         {
-            throw new JsonSerializationException(
-                "The result could not be deserialized into an image model. Verify the digest represents an image config and not a layer.", e);
+            throw new JsonSerializationException(ErrorMessage, e);
         }
     }
 

@@ -1,11 +1,10 @@
-﻿using Microsoft.Rest;
-using Microsoft.Rest.Serialization;
+﻿using Newtonsoft.Json;
 using System.Net.Http.Headers;
 using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
 
-internal class ManifestOperations : IServiceOperations<RegistryClient>, IManifestOperations
+internal class ManifestOperations : IManifestOperations
 {
     private const string NotFoundMessage = "Manifest not found.";
     private const string DockerContentDigestHeader = "Docker-Content-Digest";
@@ -30,12 +29,7 @@ internal class ManifestOperations : IServiceOperations<RegistryClient>, IManifes
     {
         HttpRequestMessage request = CreateGetRequestMessage(GetManifestUri(repositoryName, digest), HttpMethod.Head);
         HttpResponseMessage response = await this.Client.SendRequestAsync(request, ignoreUnsuccessfulResponse: true, cancellationToken).ConfigureAwait(false);
-        return new HttpOperationResponse<bool>
-        {
-            Body = response.IsSuccessStatusCode,
-            Request = request,
-            Response = response
-        };
+        return new HttpOperationResponse<bool>(request, response, response.IsSuccessStatusCode);
     }
 
     public Task<HttpOperationResponse<string>> GetDigestWithHttpMessagesAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default) =>
@@ -78,23 +72,23 @@ internal class ManifestOperations : IServiceOperations<RegistryClient>, IManifes
             ManifestMediaTypes.DockerManifestSchema1 or ManifestMediaTypes.DockerManifestSchema1Signed => new ManifestInfo(
                 mediaType,
                 dockerContentDigest,
-                SafeJsonConvert.DeserializeObject<DockerManifestV1>(content)),
+                JsonConvert.DeserializeObject<DockerManifestV1>(content) ?? throw new JsonSerializationException($"Unable to deserialize content:{Environment.NewLine}{content}")),
             ManifestMediaTypes.DockerManifestSchema2 => new ManifestInfo(
                 mediaType,
                 dockerContentDigest,
-                SafeJsonConvert.DeserializeObject<DockerManifestV2>(content)),
+                JsonConvert.DeserializeObject<DockerManifestV2>(content) ?? throw new JsonSerializationException($"Unable to deserialize content:{Environment.NewLine}{content}")),
             ManifestMediaTypes.DockerManifestList => new ManifestInfo(
                 mediaType,
                 dockerContentDigest,
-                SafeJsonConvert.DeserializeObject<ManifestList>(content)),
+                JsonConvert.DeserializeObject<ManifestList>(content) ?? throw new JsonSerializationException($"Unable to deserialize content:{Environment.NewLine}{content}")),
             ManifestMediaTypes.OciManifestSchema1 => new ManifestInfo(
                 mediaType,
                 dockerContentDigest,
-                SafeJsonConvert.DeserializeObject<OciManifest>(content)),
+                JsonConvert.DeserializeObject<OciManifest>(content) ?? throw new JsonSerializationException($"Unable to deserialize content:{Environment.NewLine}{content}")),
             ManifestMediaTypes.OciManifestList1 => new ManifestInfo(
                 mediaType,
                 dockerContentDigest,
-                SafeJsonConvert.DeserializeObject<OciManifestList>(content)),
+                JsonConvert.DeserializeObject<OciManifestList>(content) ?? throw new JsonSerializationException($"Unable to deserialize content:{Environment.NewLine}{content}")),
             _ => throw new NotSupportedException($"Content type '{mediaType}' not supported."),
         };
     }
