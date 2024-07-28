@@ -4,9 +4,9 @@ namespace Valleysoft.DockerRegistryClient;
 
 public interface ITagOperations
 {
-    Task<HttpOperationResponse<Page<RepositoryTags>>> GetWithHttpMessagesAsync(
+    Task<Page<RepositoryTags>> GetAsync(
         string repositoryName, int? count = null, CancellationToken cancellationToken = default);
 
-    Task<HttpOperationResponse<Page<RepositoryTags>>> GetNextWithHttpMessagesAsync(
+    Task<Page<RepositoryTags>> GetNextAsync(
         string nextPageLink, CancellationToken cancellationToken = default);
 }

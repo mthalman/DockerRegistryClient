@@ -11,24 +11,24 @@ internal class TagOperations : ITagOperations
         this.Client = client;
     }
 
-    public Task<HttpOperationResponse<Page<RepositoryTags>>> GetWithHttpMessagesAsync(
-        string repositoryName, int? count = null, CancellationToken cancellationToken = default)
+    public async Task<Page<RepositoryTags>> GetAsync(string repositoryName, int? count = null, CancellationToken cancellationToken = default)
     {
         string url = UrlHelper.ApplyCount($"v2/{repositoryName}/tags/list", count);
-        return GetNextWithHttpMessagesAsync(url, cancellationToken);
+        return await GetNextAsync(url, cancellationToken);
     }
 
-    public Task<HttpOperationResponse<Page<RepositoryTags>>> GetNextWithHttpMessagesAsync(
-        string nextPageLink, CancellationToken cancellationToken = default)
+    public async Task<Page<RepositoryTags>> GetNextAsync(string nextPageLink, CancellationToken cancellationToken = default)
     {
-        return OperationsHelper.HandleNotFoundErrorAsync(
-            "Repository not found.",
-            () => this.Client.SendRequestAsync(
-                new HttpRequestMessage(
-                    HttpMethod.Get,
-                    new Uri(UrlHelper.Concat(this.Client.BaseUri.AbsoluteUri, nextPageLink))),
-                GetResult,
-                cancellationToken));
+        using HttpRequestMessage request = new(
+            HttpMethod.Get,
+            new Uri(UrlHelper.Concat(this.Client.BaseUri.AbsoluteUri, nextPageLink)));
+
+        return await OperationsHelper.HandleNotFoundErrorAsync(
+           "Repository not found.",
+           () => this.Client.SendRequestAsync(
+               request,
+               GetResult,
+               cancellationToken)).ConfigureAwait(false);
     }
 
     private static Page<RepositoryTags> GetResult(HttpResponseMessage response, string content)

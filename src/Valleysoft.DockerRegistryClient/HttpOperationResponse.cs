@@ -5,8 +5,8 @@ public record HttpOperationResponse(HttpRequestMessage Request, HttpResponseMess
 {
     public void Dispose()
     {
-        this.Response?.Dispose();
-        this.Request?.Dispose();
+        this.Response.Dispose();
+        this.Request.Dispose();
         GC.SuppressFinalize(this);
     }
 }

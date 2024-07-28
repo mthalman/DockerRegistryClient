@@ -16,30 +16,46 @@ internal class ManifestOperations : IManifestOperations
         this.Client = client;
     }
 
-    public Task<HttpOperationResponse<ManifestInfo>> GetWithHttpMessagesAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default) =>
-        OperationsHelper.HandleNotFoundErrorAsync(
+    public async Task<ManifestInfo> GetAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage request = CreateGetRequestMessage(GetManifestUri(repositoryName, tagOrDigest), HttpMethod.Get);
+
+        return await OperationsHelper.HandleNotFoundErrorAsync(
             NotFoundMessage,
             () => this.Client.SendRequestAsync(
-                CreateGetRequestMessage(GetManifestUri(repositoryName, tagOrDigest), HttpMethod.Get),
+                request,
                 GetResult,
-                cancellationToken));
-
-    public async Task<HttpOperationResponse<bool>> ExistsWithHttpMessagesAsync(
-        string repositoryName, string digest, CancellationToken cancellationToken = default)
-    {
-        HttpRequestMessage request = CreateGetRequestMessage(GetManifestUri(repositoryName, digest), HttpMethod.Head);
-        HttpResponseMessage response = await this.Client.SendRequestAsync(request, ignoreUnsuccessfulResponse: true, cancellationToken).ConfigureAwait(false);
-        return new HttpOperationResponse<bool>(request, response, response.IsSuccessStatusCode);
+                cancellationToken)).ConfigureAwait(false);
     }
 
-    public Task<HttpOperationResponse<string>> GetDigestWithHttpMessagesAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default) =>
-        OperationsHelper.HandleNotFoundErrorAsync(
+    public async Task<bool> ExistsAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage request = CreateGetRequestMessage(GetManifestUri(repositoryName, tagOrDigest), HttpMethod.Head);
+        return await this.Client.SendExistsRequestAsync(request, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<string> GetDigestAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage request = CreateGetRequestMessage(GetManifestUri(repositoryName, tagOrDigest), HttpMethod.Head);
+        return await OperationsHelper.HandleNotFoundErrorAsync(
             NotFoundMessage,
             () => this.Client.SendRequestAsync(
-                CreateGetRequestMessage(GetManifestUri(repositoryName, tagOrDigest), HttpMethod.Head),
+                request,
                 (response, content) => GetDigest(response),
-                cancellationToken));
+                cancellationToken)).ConfigureAwait(false);
+    }
 
+    public async Task<string> GetDigestWithHttpMessagesAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage request = CreateGetRequestMessage(GetManifestUri(repositoryName, tagOrDigest), HttpMethod.Head);
+        return await OperationsHelper.HandleNotFoundErrorAsync(
+            NotFoundMessage,
+            () => this.Client.SendRequestAsync(
+                request,
+                (response, content) => GetDigest(response),
+                cancellationToken)).ConfigureAwait(false);
+    }
+    
     private Uri GetManifestUri(string repositoryName, string tagOrDigest) =>
         new(this.Client.BaseUri.AbsoluteUri + $"v2/{repositoryName}/manifests/{tagOrDigest}");
 
