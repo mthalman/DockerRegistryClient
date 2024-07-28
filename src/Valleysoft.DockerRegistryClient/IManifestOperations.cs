@@ -4,7 +4,7 @@ namespace Valleysoft.DockerRegistryClient;
  
 public interface IManifestOperations
 {
-    Task<HttpOperationResponse<ManifestInfo>> GetWithHttpMessagesAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default);
-    Task<HttpOperationResponse<bool>> ExistsWithHttpMessagesAsync(string repositoryName, string digest, CancellationToken cancellationToken = default);
-    Task<HttpOperationResponse<string>> GetDigestWithHttpMessagesAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default);
+    Task<ManifestInfo> GetAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default);
+    Task<bool> ExistsAsync(string repositoryName, string digest, CancellationToken cancellationToken = default);
+    Task<string> GetDigestAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default);
 }

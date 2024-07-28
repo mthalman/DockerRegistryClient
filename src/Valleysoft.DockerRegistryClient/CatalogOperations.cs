@@ -11,22 +11,26 @@ internal class CatalogOperations : ICatalogOperations
         this.Client = client;
     }
 
-    public Task<HttpOperationResponse<Page<Catalog>>> GetWithHttpMessagesAsync(int? count = null, CancellationToken cancellationToken = default)
+    public async Task<Page<Catalog>> GetAsync(int? count = null, CancellationToken cancellationToken = default)
     {
         string url = UrlHelper.ApplyCount($"v2/_catalog", count);
-        return GetNextWithHttpMessagesAsync(url, cancellationToken);
+        return await GetNextAsync(url, cancellationToken).ConfigureAwait(false);
     }
 
-    public Task<HttpOperationResponse<Page<Catalog>>> GetNextWithHttpMessagesAsync(string nextPageLink, CancellationToken cancellationToken = default) =>
-        OperationsHelper.HandleNotFoundErrorAsync(
+    public async Task<Page<Catalog>> GetNextAsync(string nextPageLink, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage request = new(
+            HttpMethod.Get,
+            new Uri(UrlHelper.Concat(this.Client.BaseUri.AbsoluteUri, nextPageLink)));
+
+        return await OperationsHelper.HandleNotFoundErrorAsync(
             "Catalog page not found.",
             () => this.Client.SendRequestAsync(
-                new HttpRequestMessage(
-                    HttpMethod.Get,
-                    new Uri(UrlHelper.Concat(this.Client.BaseUri.AbsoluteUri, nextPageLink))),
+                request,
                 GetResult,
-                cancellationToken));
-
+                cancellationToken)).ConfigureAwait(false);
+    }
+        
     private static Page<Catalog> GetResult(HttpResponseMessage response, string content)
     {
         string? nextLink = RegistryClient.GetNextLinkUrl(response);

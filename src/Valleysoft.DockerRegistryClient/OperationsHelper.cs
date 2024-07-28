@@ -4,7 +4,7 @@ namespace Valleysoft.DockerRegistryClient;
 
 internal static class OperationsHelper
 {
-    public static async Task<HttpOperationResponse<T>> HandleNotFoundErrorAsync<T>(string errorMessage, Func<Task<HttpOperationResponse<T>>> func)
+    public static async Task<T> HandleNotFoundErrorAsync<T>(string errorMessage, Func<Task<T>> func)
     {
         try
         {

@@ -58,17 +58,28 @@ public class RegistryClient : IDisposable
         this.Manifests = new ManifestOperations(this);
     }
 
-    internal Task<HttpOperationResponse<T>> SendRequestAsync<T>(HttpRequestMessage request, CancellationToken cancellationToken = default) =>
+    internal Task<T> SendRequestAsync<T>(HttpRequestMessage request, CancellationToken cancellationToken = default) =>
         SendRequestAsync(request, (Func<HttpResponseMessage, string, T>?)null, cancellationToken);
 
-    internal async Task<HttpOperationResponse<T>> SendRequestAsync<T>(HttpRequestMessage request,
+    internal async Task<T> SendRequestAsync<T>(HttpRequestMessage request,
         Func<HttpResponseMessage, string, T>? getResult, CancellationToken cancellationToken = default)
     {
-        HttpResponseMessage response = await SendRequestAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return await GetStringContentAsync(request, response, getResult).ConfigureAwait(false);
+        using HttpResponseMessage response = await SendRequestCoreAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return await GetStringContentAsync(response, getResult).ConfigureAwait(false);
     }
 
-    internal async Task<HttpResponseMessage> SendRequestAsync(HttpRequestMessage request, bool ignoreUnsuccessfulResponse = false, CancellationToken cancellationToken = default)
+    internal async Task SendRequestAsync(HttpRequestMessage request, bool ignoreUnsuccessfulResponse = false, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await SendRequestCoreAsync(request, ignoreUnsuccessfulResponse, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<bool> SendExistsRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await SendRequestCoreAsync(request, ignoreUnsuccessfulResponse: true, cancellationToken).ConfigureAwait(false);
+        return response.IsSuccessStatusCode;
+    }
+
+    internal async Task<HttpResponseMessage> SendRequestCoreAsync(HttpRequestMessage request, bool ignoreUnsuccessfulResponse = false, CancellationToken cancellationToken = default)
     {
         if (this.credentials is not null && request.Headers.Authorization is null)
         {
@@ -171,8 +182,8 @@ public class RegistryClient : IDisposable
             Message = errorElement.Element("Message")?.Value
         };
 
-    internal static async Task<HttpOperationResponse<T>> GetStringContentAsync<T>(
-        HttpRequestMessage request, HttpResponseMessage response, Func<HttpResponseMessage, string, T>? getResult)
+    internal static async Task<T> GetStringContentAsync<T>(
+        HttpResponseMessage response, Func<HttpResponseMessage, string, T>? getResult)
     {
         string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
@@ -180,7 +191,7 @@ public class RegistryClient : IDisposable
 
         try
         {
-            return new HttpOperationResponse<T>(request, response, getResult(response, content));
+            return getResult(response, content);
         }
         catch (JsonException e)
         {

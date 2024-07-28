@@ -1,28 +1,28 @@
 ﻿namespace Valleysoft.DockerRegistryClient;
- 
+
 public interface IBlobOperations
 {
-    Task<HttpOperationResponse<Stream>> GetWithHttpMessagesAsync(
+    Task<Stream> GetAsync(
         string repositoryName, string digest, CancellationToken cancellationToken = default);
 
-    Task<HttpOperationResponse<bool>> ExistsWithHttpMessagesAsync(
+    Task<bool> ExistsAsync(
         string repositoryName, string digest, CancellationToken cancellationToken = default);
 
-    Task<HttpOperationResponse> DeleteWithHttpMessagesAsync(
+    Task DeleteAsync(
         string repositoryName, string digest, CancellationToken cancellationToken = default);
 
-    Task<HttpOperationResponse> GetUploadWithHttpMessagesAsync(
+    Task<BlobUpload> GetUploadAsync(
         string uploadLocation, CancellationToken cancellationToken = default);
 
-    Task<HttpOperationResponse> DeleteUploadWithHttpMessagesAsync(
+    Task DeleteUploadAsync(
         string uploadLocation, CancellationToken cancellationToken = default);
 
-    Task<HttpOperationResponse<BlobUploadContext>> BeginUploadWithHttpMessagesAsync(
+    Task<BlobUploadInitializationResult> BeginUploadAsync(
         string repositoryName, CancellationToken cancellationToken = default);
 
-    Task<HttpOperationResponse> SendUploadStreamWithHttpMessagesAsync(
+    Task<BlobUploadStreamResult> SendUploadStreamAsync(
         string uploadLocation, Stream stream, BlobUploadContext uploadContext, CancellationToken cancellationToken = default);
 
-    Task<HttpOperationResponse> EndUploadWithHttpMessagesAsync(
+    Task<BlobUploadResult> EndUploadAsync(
         string uploadLocation, string digest, BlobUploadContext uploadContext, Stream? stream = null, CancellationToken cancellationToken = default);
 }
