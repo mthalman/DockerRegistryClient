@@ -1,16 +1,16 @@
-﻿using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+﻿using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Valleysoft.DockerRegistryClient.Models;
  
 public class Error
 {
-    [JsonProperty("code")]
+    [JsonPropertyName("code")]
     public string? Code { get; set; }
 
-    [JsonProperty("message")]
+    [JsonPropertyName("message")]
     public string? Message { get; set; }
 
-    [JsonProperty("detail")]
-    public JToken? Detail { get; set; }
+    [JsonPropertyName("detail")]
+    public JsonElement? Detail { get; set; }
 }

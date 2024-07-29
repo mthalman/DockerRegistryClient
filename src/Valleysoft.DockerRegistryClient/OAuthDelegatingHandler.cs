@@ -1,7 +1,7 @@
-﻿using Newtonsoft.Json;
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Authentication;
+using System.Text.Json;
 using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
@@ -90,11 +90,11 @@ internal class OAuthDelegatingHandler : DelegatingHandler
 
         try
         {
-            return JsonConvert.DeserializeObject<OAuthToken>(tokenContent) ?? throw new JsonSerializationException($"Unable to deserialize response:{Environment.NewLine}{tokenContent}");
+            return JsonSerializer.Deserialize<OAuthToken>(tokenContent) ?? throw new JsonException($"Unable to deserialize response:{Environment.NewLine}{tokenContent}");
         }
         catch (JsonException e)
         {
-            throw new JsonSerializationException($"Unable to deserialize the response:{Environment.NewLine}{tokenContent}", e);
+            throw new JsonException($"Unable to deserialize the response:{Environment.NewLine}{tokenContent}", e);
         }
     }
 }

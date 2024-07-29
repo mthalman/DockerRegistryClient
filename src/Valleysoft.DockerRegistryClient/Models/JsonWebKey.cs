@@ -1,21 +1,21 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace Valleysoft.DockerRegistryClient.Models;
 
 public class JsonWebKey
 {
-    [JsonProperty("crv")]
+    [JsonPropertyName("crv")]
     public string? Crv { get; set; }
 
-    [JsonProperty("kid")]
+    [JsonPropertyName("kid")]
     public string? Kid { get; set; }
 
-    [JsonProperty("kty")]
+    [JsonPropertyName("kty")]
     public string? Kty { get; set; }
 
-    [JsonProperty("x")]
+    [JsonPropertyName("x")]
     public string? X { get; set; }
 
-    [JsonProperty("y")]
+    [JsonPropertyName("y")]
     public string? Y { get; set; }
 }

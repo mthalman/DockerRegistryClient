@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace Valleysoft.DockerRegistryClient.Models;
 
@@ -10,60 +10,60 @@ public class Image
     /// <summary>
     /// An combined date and time at which the image was created, formatted as defined by RFC 3339, section 5.6.
     /// </summary>
-    [JsonProperty("created")]
+    [JsonPropertyName("created")]
     public DateTime? Created { get; set; }
 
     /// <summary>
     /// Gives the name and/or email address of the person or entity which created and is responsible for maintaining the image.
     /// </summary>
-    [JsonProperty("author")]
+    [JsonPropertyName("author")]
     public string? Author { get; set; }
 
     /// <summary>
     /// The CPU architecture which the binaries in this image are built to run on.
     /// </summary>
-    [JsonProperty("architecture")]
+    [JsonPropertyName("architecture")]
     public string Architecture { get; set; } = string.Empty;
 
     /// <summary>
     /// The name of the operating system which the image is built to run on.
     /// </summary>
-    [JsonProperty("os")]
+    [JsonPropertyName("os")]
     public string Os { get; set; } = string.Empty;
 
     /// <summary>
     /// Specifies the version of the operating system targeted by the referenced blob.
     /// </summary>
-    [JsonProperty("os.version")]
+    [JsonPropertyName("os.version")]
     public string? OsVersion { get; set; }
 
     /// <summary>
     /// This OPTIONAL property specifies an array of strings, each specifying a mandatory OS feature
     /// </summary>
-    [JsonProperty("os.features")]
+    [JsonPropertyName("os.features")]
     public string[] OsFeatures { get; set; } = Array.Empty<string>();
 
     /// <summary>
     /// The variant of the specified CPU architecture.
     /// </summary>
-    [JsonProperty("variant")]
+    [JsonPropertyName("variant")]
     public string? Variant { get; set; }
 
     /// <summary>
     /// The execution parameters which should be used as a base when running a container using the image.
     /// </summary>
-    [JsonProperty("config")]
+    [JsonPropertyName("config")]
     public ImageConfig? Config { get; set; }
 
     /// <summary>
     /// References the layer content addresses used by the image.
     /// </summary>
-    [JsonProperty("rootfs")]
+    [JsonPropertyName("rootfs")]
     public RootFilesystem RootFilesystem { get; set; } = new RootFilesystem();
 
     /// <summary>
     /// Describes the history of each layer. The array is ordered from first to last.
     /// </summary>
-    [JsonProperty("history")]
+    [JsonPropertyName("history")]
     public LayerHistory[] History { get; set; } = Array.Empty<LayerHistory>();
 }

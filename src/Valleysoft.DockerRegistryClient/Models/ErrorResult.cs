@@ -1,9 +1,9 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace Valleysoft.DockerRegistryClient.Models;
 
 public class ErrorResult
 {
-    [JsonProperty("errors")]
+    [JsonPropertyName("errors")]
     public Error[] Errors { get; set; } = Array.Empty<Error>();
 }

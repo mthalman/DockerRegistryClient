@@ -1,9 +1,9 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace Valleysoft.DockerRegistryClient.Models;
 
 public class Catalog
 {
-    [JsonProperty("repositories")]
+    [JsonPropertyName("repositories")]
     public List<string> RepositoryNames { get; set; } = new List<string>();
 }
