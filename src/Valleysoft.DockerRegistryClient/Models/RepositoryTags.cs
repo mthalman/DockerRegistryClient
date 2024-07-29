@@ -1,12 +1,12 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace Valleysoft.DockerRegistryClient.Models;
  
 public class RepositoryTags
 {
-    [JsonProperty("name")]
+    [JsonPropertyName("name")]
     public string? RepositoryName { get; set; }
 
-    [JsonProperty("tags")]
+    [JsonPropertyName("tags")]
     public string[] Tags { get; set; } = Array.Empty<string>();
 }

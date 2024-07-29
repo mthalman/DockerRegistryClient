@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Valleysoft.DockerRegistryClient.Credentials;
@@ -130,7 +130,7 @@ public class RegistryClient : IDisposable
             }
             else
             {
-                errorResult = JsonConvert.DeserializeObject<ErrorResult?>(errorContent);
+                errorResult = JsonSerializer.Deserialize<ErrorResult?>(errorContent);
             }
 
             throw new RegistryException(
@@ -195,7 +195,7 @@ public class RegistryClient : IDisposable
         }
         catch (JsonException e)
         {
-            throw new JsonSerializationException($"Unable to deserialize the response:{Environment.NewLine}{content}", e);
+            throw new JsonException($"Unable to deserialize the response:{Environment.NewLine}{content}", e);
         }
     }
 
@@ -207,7 +207,7 @@ public class RegistryClient : IDisposable
     }
 
     internal static T GetResult<T>(HttpResponseMessage response, string content) =>
-        JsonConvert.DeserializeObject<T>(content) ?? throw new JsonSerializationException($"Unable to deserialize the content:{Environment.NewLine}{content}");
+        JsonSerializer.Deserialize<T>(content) ?? throw new JsonException($"Unable to deserialize the content:{Environment.NewLine}{content}");
 
     internal static string? GetNextLinkUrl(HttpResponseMessage response)
     {

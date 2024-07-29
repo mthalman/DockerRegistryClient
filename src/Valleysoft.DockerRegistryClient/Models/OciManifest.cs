@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace Valleysoft.DockerRegistryClient.Models;
 
@@ -9,6 +9,6 @@ public class OciManifest : DockerManifestV2
         MediaType = ManifestMediaTypes.OciManifestSchema1;
     }
 
-    [JsonProperty("annotations")]
+    [JsonPropertyName("annotations")]
     public IDictionary<string, string> Annotations { get; set; } = new Dictionary<string, string>();
 }

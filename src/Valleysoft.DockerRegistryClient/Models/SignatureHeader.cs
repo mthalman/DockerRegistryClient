@@ -1,12 +1,12 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace Valleysoft.DockerRegistryClient.Models;
 
 public class SignatureHeader
 {
-    [JsonProperty("jwk")]
+    [JsonPropertyName("jwk")]
     public JsonWebKey? Jwk { get; set; }
 
-    [JsonProperty("alg")]
+    [JsonPropertyName("alg")]
     public string? Algorithm { get; set; }
 }

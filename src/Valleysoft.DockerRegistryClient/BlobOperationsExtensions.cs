@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json;
 using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
@@ -15,7 +15,7 @@ public static class BlobOperationsExtensions
     /// <param name="repositoryName">Name of the repository the blob belongs to.</param>
     /// <param name="digest">Digest of the blob (e.g. "sha256:&lt;value&gt;").</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
-    /// <exception cref="JsonSerializationException">Unable to deserialize the data to the object model.</exception>
+    /// <exception cref="JsonException">Unable to deserialize the data to the object model.</exception>
     public static async Task<Image> GetImageAsync(this IBlobOperations operations, string repositoryName, string digest, CancellationToken cancellationToken = default)
     {
         using Stream blob = await operations.GetAsync(repositoryName, digest, cancellationToken);
@@ -24,11 +24,11 @@ public static class BlobOperationsExtensions
         const string ErrorMessage = "The result could not be deserialized into an image model. Verify the digest represents an image config and not a layer.";
         try
         {
-            return JsonConvert.DeserializeObject<Image>(content) ?? throw new JsonSerializationException(ErrorMessage);
+            return JsonSerializer.Deserialize<Image>(content) ?? throw new JsonException(ErrorMessage);
         }
-        catch (JsonReaderException e)
+        catch (JsonException e)
         {
-            throw new JsonSerializationException(ErrorMessage, e);
+            throw new JsonException(ErrorMessage, e);
         }
     }
 

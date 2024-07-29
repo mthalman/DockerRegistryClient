@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace Valleysoft.DockerRegistryClient.Models;
 
@@ -16,12 +16,12 @@ public class DockerManifestV2 : ManifestWithMediaType
     /// <summary>
     /// The config field references a configuration object for a container, by digest. This configuration item is a JSON blob that the runtime uses to set up the container. This new schema uses a tweaked version of this configuration to allow image content-addressability on the daemon side.
     /// </summary>
-    [JsonProperty("config")]
+    [JsonPropertyName("config")]
     public ManifestConfig? Config { get; set; }
 
     /// <summary>
     /// The layer list is ordered starting from the base image (opposite order of schema1).
     /// </summary>
-    [JsonProperty("layers")]
+    [JsonPropertyName("layers")]
     public ManifestLayer[] Layers { get; set; } = Array.Empty<ManifestLayer>();
 }

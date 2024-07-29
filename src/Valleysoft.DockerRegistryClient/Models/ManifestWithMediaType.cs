@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace Valleysoft.DockerRegistryClient.Models;
 
@@ -7,6 +7,6 @@ public abstract class ManifestWithMediaType : Manifest
     /// <summary>
     /// The MIME type of the manifest.
     /// </summary>
-    [JsonProperty("mediaType")]
+    [JsonPropertyName("mediaType")]
     public string? MediaType { get; set; }
 }

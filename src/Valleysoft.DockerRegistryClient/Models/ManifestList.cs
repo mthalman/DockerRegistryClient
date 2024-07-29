@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace Valleysoft.DockerRegistryClient.Models;
 
@@ -16,6 +16,6 @@ public class ManifestList : ManifestWithMediaType
     /// <summary>
     /// The manifests field contains a list of manifests for specific platforms.
     /// </summary>
-    [JsonProperty("manifests")]
+    [JsonPropertyName("manifests")]
     public ManifestReference[] Manifests { get; set; } = Array.Empty<ManifestReference>();
 }

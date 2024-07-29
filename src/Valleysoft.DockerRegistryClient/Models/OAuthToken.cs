@@ -1,18 +1,18 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace Valleysoft.DockerRegistryClient.Models;
  
 internal class OAuthToken
 {
-    [JsonProperty("token")]
+    [JsonPropertyName("token")]
     public string? Token { get; set; }
 
-    [JsonProperty("access_token")]
+    [JsonPropertyName("access_token")]
     public string? AccessToken { get; set; }
 
-    [JsonProperty("expires_in")]
+    [JsonPropertyName("expires_in")]
     public int? ExpiresIn { get; set; }
 
-    [JsonProperty("issued_at")]
+    [JsonPropertyName("issued_at")]
     public DateTime? IssuedAt { get; set; }
 }

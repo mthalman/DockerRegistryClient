@@ -1,9 +1,9 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace Valleysoft.DockerRegistryClient.Models;
 
 public abstract class Manifest
 {
-    [JsonProperty("schemaVersion")]
+    [JsonPropertyName("schemaVersion")]
     public int SchemaVersion { get; set; }
 }

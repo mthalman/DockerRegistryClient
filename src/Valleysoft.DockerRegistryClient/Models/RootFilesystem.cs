@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace Valleysoft.DockerRegistryClient.Models;
 
@@ -10,12 +10,12 @@ public class RootFilesystem
     /// <summary>
     /// Type of the content.
     /// </summary>
-    [JsonProperty("type")]
+    [JsonPropertyName("type")]
     public string Type { get; set; } = string.Empty;
 
     // <summary>
     /// An array of layer content hashes, in order from first to last.
     /// </summary>
-    [JsonProperty("diff_ids")]
+    [JsonPropertyName("diff_ids")]
     public string[] DiffIds { get; set; } = Array.Empty<string>();
 }
