@@ -1,7 +1,8 @@
 ﻿using System.Text.Json.Serialization;
 
 namespace Valleysoft.DockerRegistryClient.Models;
- 
+
+// https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-tags
 public class RepositoryTags
 {
     [JsonPropertyName("name")]

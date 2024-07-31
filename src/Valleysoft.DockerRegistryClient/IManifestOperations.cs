@@ -1,7 +1,7 @@
-﻿using Valleysoft.DockerRegistryClient.Models;
+﻿using Valleysoft.DockerRegistryClient.Models.Manifests;
 
 namespace Valleysoft.DockerRegistryClient;
- 
+
 public interface IManifestOperations
 {
     Task<ManifestInfo> GetAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default);

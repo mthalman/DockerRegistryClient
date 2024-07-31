@@ -1,6 +1,7 @@
 ﻿using System.Net.Http.Headers;
 using System.Text.Json;
-using Valleysoft.DockerRegistryClient.Models;
+using Valleysoft.DockerRegistryClient.Models.Manifest.Oci;
+using Valleysoft.DockerRegistryClient.Models.Manifests;
 
 namespace Valleysoft.DockerRegistryClient;
 
@@ -88,11 +89,18 @@ internal class ManifestOperations : IManifestOperations
             ManifestMediaTypes.DockerManifestSchema1 or ManifestMediaTypes.DockerManifestSchema1Signed => new ManifestInfo(
                 mediaType,
                 dockerContentDigest,
-                JsonSerializer.Deserialize<DockerManifestV1>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
+                JsonSerializer.Deserialize<Models.Manifests.Docker.Version1.DockerManifest>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
             ManifestMediaTypes.DockerManifestSchema2 => new ManifestInfo(
                 mediaType,
                 dockerContentDigest,
-                JsonSerializer.Deserialize<DockerManifestV2>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
+
+/* Unmerged change from project 'Valleysoft.DockerRegistryClient (netstandard2.0)'
+Before:
+                JsonSerializer.Deserialize<Models.Docker.Version2.DockerManifest>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
+After:
+                JsonSerializer.Deserialize<DockerManifest>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
+*/
+                JsonSerializer.Deserialize<Models.Manifests.Docker.Version2.DockerManifest>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
             ManifestMediaTypes.DockerManifestList => new ManifestInfo(
                 mediaType,
                 dockerContentDigest,
@@ -100,7 +108,7 @@ internal class ManifestOperations : IManifestOperations
             ManifestMediaTypes.OciManifestSchema1 => new ManifestInfo(
                 mediaType,
                 dockerContentDigest,
-                JsonSerializer.Deserialize<OciManifest>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
+                JsonSerializer.Deserialize<OciImageManifest>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
             ManifestMediaTypes.OciManifestList1 => new ManifestInfo(
                 mediaType,
                 dockerContentDigest,

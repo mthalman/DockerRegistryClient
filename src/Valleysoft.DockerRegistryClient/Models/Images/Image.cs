@@ -1,6 +1,8 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Valleysoft.DockerRegistryClient.Models;
+namespace Valleysoft.DockerRegistryClient.Models.Image;
+
+// https://github.com/opencontainers/image-spec/blob/v1.0/config.md
 
 /// <summary>
 /// An image is an ordered collection of root filesystem changes and the corresponding execution parameters for use within a container runtime.

@@ -1,4 +1,4 @@
-﻿namespace Valleysoft.DockerRegistryClient.Models;
+﻿namespace Valleysoft.DockerRegistryClient;
 
 public class Page<T>
 {

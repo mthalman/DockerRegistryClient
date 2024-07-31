@@ -2,7 +2,8 @@
 using System.Text.Json.Serialization;
 
 namespace Valleysoft.DockerRegistryClient.Models;
- 
+
+// https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
 public class Error
 {
     [JsonPropertyName("code")]
