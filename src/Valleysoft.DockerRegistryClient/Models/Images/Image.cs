@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Valleysoft.DockerRegistryClient.Models.Image;
+namespace Valleysoft.DockerRegistryClient.Models.Images;
 
 // https://github.com/opencontainers/image-spec/blob/v1.0/config.md
 

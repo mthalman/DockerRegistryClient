@@ -1,5 +1,5 @@
 ﻿using System.Text.Json;
-using Valleysoft.DockerRegistryClient.Models.Image;
+using Valleysoft.DockerRegistryClient.Models.Images;
 
 namespace Valleysoft.DockerRegistryClient;
 
