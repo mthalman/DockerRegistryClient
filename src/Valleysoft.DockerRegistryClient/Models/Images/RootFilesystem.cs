@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Valleysoft.DockerRegistryClient.Models.Image;
+namespace Valleysoft.DockerRegistryClient.Models.Images;
 
 /// <summary>
 /// References the layer content addresses used by the image.

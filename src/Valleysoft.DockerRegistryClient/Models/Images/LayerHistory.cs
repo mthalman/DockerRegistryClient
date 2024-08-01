@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Valleysoft.DockerRegistryClient.Models.Image;
+namespace Valleysoft.DockerRegistryClient.Models.Images;
 
 public class LayerHistory
 {
