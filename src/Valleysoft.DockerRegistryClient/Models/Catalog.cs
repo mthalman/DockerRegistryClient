@@ -2,6 +2,7 @@
 
 namespace Valleysoft.DockerRegistryClient.Models;
 
+// https://docker-docs.uclv.cu/registry/spec/api/#listing-repositories
 public class Catalog
 {
     [JsonPropertyName("repositories")]

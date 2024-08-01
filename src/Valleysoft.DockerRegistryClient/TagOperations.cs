@@ -1,7 +1,7 @@
 ﻿using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
- 
+
 internal class TagOperations : ITagOperations
 {
     public RegistryClient Client { get; }

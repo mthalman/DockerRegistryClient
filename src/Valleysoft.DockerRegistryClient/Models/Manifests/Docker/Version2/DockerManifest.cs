@@ -1,13 +1,13 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Valleysoft.DockerRegistryClient.Models;
+namespace Valleysoft.DockerRegistryClient.Models.Manifests.Docker.Version2;
 
 /// <summary>
 /// The image manifest provides a configuration and a set of layers for a container image. It’s the direct replacement for the schema-1 manifest.
 /// </summary>
-public class DockerManifestV2 : ManifestWithMediaType
+public class DockerManifest : ManifestWithMediaType
 {
-    public DockerManifestV2()
+    public DockerManifest()
     {
         MediaType = ManifestMediaTypes.DockerManifestSchema2;
         SchemaVersion = 2;

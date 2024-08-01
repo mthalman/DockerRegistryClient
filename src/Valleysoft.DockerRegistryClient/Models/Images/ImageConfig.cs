@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Valleysoft.DockerRegistryClient.Models;
+namespace Valleysoft.DockerRegistryClient.Models.Image;
 
 /// <summary>
 /// The execution parameters which should be used as a base when running a container using the image.

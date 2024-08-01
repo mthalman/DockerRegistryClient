@@ -1,12 +1,12 @@
-﻿namespace Valleysoft.DockerRegistryClient.Models;
+﻿namespace Valleysoft.DockerRegistryClient.Models.Manifests;
 
 public class ManifestInfo
 {
     public ManifestInfo(string mediaType, string dockerContentDigest, Manifest manifest)
     {
-        this.MediaType = mediaType;
-        this.DockerContentDigest = dockerContentDigest;
-        this.Manifest = manifest;
+        MediaType = mediaType;
+        DockerContentDigest = dockerContentDigest;
+        Manifest = manifest;
     }
 
     public string MediaType { get; }

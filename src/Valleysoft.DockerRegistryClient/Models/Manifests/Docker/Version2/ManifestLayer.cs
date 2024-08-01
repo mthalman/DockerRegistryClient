@@ -1,11 +1,11 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Valleysoft.DockerRegistryClient.Models;
- 
-public class ManifestConfig
+namespace Valleysoft.DockerRegistryClient.Models.Manifests.Docker.Version2;
+
+public class ManifestLayer
 {
     /// <summary>
-    /// The MIME type of the referenced object.
+    /// The MIME type of the referenced object. This should generally be application/vnd.docker.image.rootfs.diff.tar.gzip. Layers of type application/vnd.docker.image.rootfs.foreign.diff.tar.gzip may be pulled from a remote location but they should never be pushed.
     /// </summary>
     [JsonPropertyName("mediaType")]
     public string? MediaType { get; set; }
@@ -17,13 +17,14 @@ public class ManifestConfig
     public long? Size { get; set; }
 
     /// <summary>
-    /// The digest of the content, as defined by the Registry V2 HTTP API Specification. https://docs.docker.com/registry/spec/api/#digest-parameter
+    /// The digest of the content, as defined by the Registry V2 HTTP API Specification (https://docs.docker.com/registry/spec/api/#digest-parameter).
     /// </summary>
     [JsonPropertyName("digest")]
     public string? Digest { get; set; }
 
     /// <summary>
-    /// Provides a list of URLs from which the content may be fetched. Content should be verified against the digest and size. This field is optional and uncommon.
+    /// Provides a list of URLs from which the content may be fetched. Content should be verified against the digest and size. 
+    /// This field is optional and uncommon.
     /// </summary>
     [JsonPropertyName("urls")]
     public string[] Urls { get; set; } = Array.Empty<string>();

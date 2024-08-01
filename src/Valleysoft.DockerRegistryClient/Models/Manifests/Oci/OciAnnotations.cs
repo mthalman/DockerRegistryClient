@@ -1,4 +1,4 @@
-﻿namespace Valleysoft.DockerRegistryClient.Models;
+﻿namespace Valleysoft.DockerRegistryClient.Models.Manifests.Oci;
 
 /// <summary>
 /// Pre-defined annotation keys from the OCI spec.

@@ -1,7 +1,7 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Valleysoft.DockerRegistryClient.Models;
- 
+namespace Valleysoft.DockerRegistryClient.Models.Manifests;
+
 public class ManifestReference
 {
     /// <summary>

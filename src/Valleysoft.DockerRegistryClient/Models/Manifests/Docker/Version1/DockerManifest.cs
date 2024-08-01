@@ -1,10 +1,10 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Valleysoft.DockerRegistryClient.Models;
+namespace Valleysoft.DockerRegistryClient.Models.Manifests.Docker.Version1;
 
-public class DockerManifestV1 : Manifest
+public class DockerManifest : Manifest
 {
-    public DockerManifestV1()
+    public DockerManifest()
     {
         SchemaVersion = 1;
     }

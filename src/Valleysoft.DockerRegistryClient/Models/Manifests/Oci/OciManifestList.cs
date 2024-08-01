@@ -1,6 +1,7 @@
 ﻿using System.Text.Json.Serialization;
+using Valleysoft.DockerRegistryClient.Models.Manifests;
 
-namespace Valleysoft.DockerRegistryClient.Models;
+namespace Valleysoft.DockerRegistryClient.Models.Manifest.Oci;
 
 public class OciManifestList : ManifestList
 {

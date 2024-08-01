@@ -2,7 +2,6 @@
 using System.Net.Http.Headers;
 using System.Security.Authentication;
 using System.Text.Json;
-using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
 
