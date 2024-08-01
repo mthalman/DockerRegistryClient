@@ -5,7 +5,7 @@ namespace Valleysoft.DockerRegistryClient.Models.Manifests.Docker;
 /// <summary>
 /// The image manifest provides a configuration and a set of layers for a container image. It’s the direct replacement for the schema-1 manifest.
 /// </summary>
-public class DockerManifest : ManifestWithMediaType
+public class DockerManifest : Manifest, IImageManifest
 {
     public DockerManifest()
     {
@@ -19,9 +19,13 @@ public class DockerManifest : ManifestWithMediaType
     [JsonPropertyName("config")]
     public ManifestConfig? Config { get; set; }
 
+    IDescriptor? IImageManifest.Config => Config;
+
     /// <summary>
     /// The layer list is ordered starting from the base image (opposite order of schema1).
     /// </summary>
     [JsonPropertyName("layers")]
     public ManifestLayer[] Layers { get; set; } = Array.Empty<ManifestLayer>();
+
+    IDescriptor[] IImageManifest.Layers => Layers;
 }

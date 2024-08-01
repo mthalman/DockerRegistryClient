@@ -4,7 +4,7 @@ using Valleysoft.DockerRegistryClient.Models.Manifests;
 namespace Valleysoft.DockerRegistryClient.Models.Manifest.Oci;
 
 // https://github.com/opencontainers/image-spec/blob/v1.0/manifest.md
-public class OciImageManifest : ManifestWithMediaType
+public class OciImageManifest : Manifests.Manifest, IImageManifest
 {
     public OciImageManifest()
     {
@@ -18,8 +18,12 @@ public class OciImageManifest : ManifestWithMediaType
     [JsonPropertyName("config")]
     public OciDescriptor Config { get; set; } = new();
 
+    IDescriptor? IImageManifest.Config => Config;
+
     [JsonPropertyName("layers")]
     public OciDescriptor[] Layers { get; set; } = [];
+
+    IDescriptor[] IImageManifest.Layers => Layers;
 
     [JsonPropertyName("subject")]
     public OciDescriptor? Subject { get; set; }
