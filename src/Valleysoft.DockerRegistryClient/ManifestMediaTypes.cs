@@ -2,8 +2,6 @@
  
 public static class ManifestMediaTypes
 {
-    public const string DockerManifestSchema1 = "application/vnd.docker.distribution.manifest.v1+json";
-    public const string DockerManifestSchema1Signed = "application/vnd.docker.distribution.manifest.v1+prettyjws";
     public const string DockerManifestSchema2 = "application/vnd.docker.distribution.manifest.v2+json";
     public const string DockerManifestList = "application/vnd.docker.distribution.manifest.list.v2+json";
 

@@ -2,6 +2,7 @@
 using System.Text.Json;
 using Valleysoft.DockerRegistryClient.Models.Manifest.Oci;
 using Valleysoft.DockerRegistryClient.Models.Manifests;
+using Valleysoft.DockerRegistryClient.Models.Manifests.Docker;
 
 namespace Valleysoft.DockerRegistryClient;
 
@@ -63,7 +64,6 @@ internal class ManifestOperations : IManifestOperations
     private static HttpRequestMessage CreateGetRequestMessage(Uri requestUri, HttpMethod method)
     {
         HttpRequestMessage request = new(method, requestUri);
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.DockerManifestSchema1));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.DockerManifestSchema2));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.DockerManifestList));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.OciManifestSchema1));
@@ -86,21 +86,10 @@ internal class ManifestOperations : IManifestOperations
 
         return mediaType switch
         {
-            ManifestMediaTypes.DockerManifestSchema1 or ManifestMediaTypes.DockerManifestSchema1Signed => new ManifestInfo(
-                mediaType,
-                dockerContentDigest,
-                JsonSerializer.Deserialize<Models.Manifests.Docker.Version1.DockerManifest>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
             ManifestMediaTypes.DockerManifestSchema2 => new ManifestInfo(
                 mediaType,
                 dockerContentDigest,
-
-/* Unmerged change from project 'Valleysoft.DockerRegistryClient (netstandard2.0)'
-Before:
-                JsonSerializer.Deserialize<Models.Docker.Version2.DockerManifest>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
-After:
                 JsonSerializer.Deserialize<DockerManifest>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
-*/
-                JsonSerializer.Deserialize<Models.Manifests.Docker.Version2.DockerManifest>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
             ManifestMediaTypes.DockerManifestList => new ManifestInfo(
                 mediaType,
                 dockerContentDigest,
