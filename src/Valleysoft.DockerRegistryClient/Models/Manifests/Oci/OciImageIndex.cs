@@ -3,11 +3,11 @@ using Valleysoft.DockerRegistryClient.Models.Manifests;
 
 namespace Valleysoft.DockerRegistryClient.Models.Manifest.Oci;
 
-public class OciManifestList : ManifestList
+public class OciImageIndex : ManifestList
 {
-    public OciManifestList()
+    public OciImageIndex()
     {
-        MediaType = ManifestMediaTypes.OciManifestList1;
+        MediaType = ManifestMediaTypes.OciImageIndex1;
     }
 
     [JsonPropertyName("annotations")]

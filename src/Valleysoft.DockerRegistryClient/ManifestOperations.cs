@@ -67,7 +67,7 @@ internal class ManifestOperations : IManifestOperations
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.DockerManifestSchema2));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.DockerManifestList));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.OciManifestSchema1));
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.OciManifestList1));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.OciImageIndex1));
         return request;
     }
 
@@ -98,10 +98,10 @@ internal class ManifestOperations : IManifestOperations
                 mediaType,
                 dockerContentDigest,
                 JsonSerializer.Deserialize<OciImageManifest>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
-            ManifestMediaTypes.OciManifestList1 => new ManifestInfo(
+            ManifestMediaTypes.OciImageIndex1 => new ManifestInfo(
                 mediaType,
                 dockerContentDigest,
-                JsonSerializer.Deserialize<OciManifestList>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
+                JsonSerializer.Deserialize<OciImageIndex>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
             _ => throw new NotSupportedException($"Content type '{mediaType}' not supported."),
         };
     }
