@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Valleysoft.DockerRegistryClient.Models.Manifests.Docker.Version2;
+namespace Valleysoft.DockerRegistryClient.Models.Manifests.Docker;
 
 public class ManifestConfig
 {
