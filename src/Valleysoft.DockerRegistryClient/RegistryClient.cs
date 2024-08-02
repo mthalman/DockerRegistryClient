@@ -17,6 +17,7 @@ public class RegistryClient : IDisposable
     public ICatalogOperations Catalog { get; }
     public ITagOperations Tags { get; }
     public IManifestOperations Manifests { get; }
+    public IReferrerOperations Referrers { get; }
     public HttpClient HttpClient { get; }
 
     private readonly IRegistryClientCredentials? credentials;
@@ -56,6 +57,7 @@ public class RegistryClient : IDisposable
         this.Catalog = new CatalogOperations(this);
         this.Tags = new TagOperations(this);
         this.Manifests = new ManifestOperations(this);
+        this.Referrers = new ReferrerOperations(this);
     }
 
     internal Task<T> SendRequestAsync<T>(HttpRequestMessage request, CancellationToken cancellationToken = default) =>
@@ -206,10 +208,16 @@ public class RegistryClient : IDisposable
         return new HttpOperationResponse<Stream>(request, response, stream);
     }
 
+    internal static Page<T> GetPageResult<T>(HttpResponseMessage response, string content)
+    {
+        string? nextLink = GetNextLinkUrl(response);
+        return new Page<T>(GetResult<T>(response, content), nextLink);
+    }
+
     internal static T GetResult<T>(HttpResponseMessage response, string content) =>
         JsonSerializer.Deserialize<T>(content) ?? throw new JsonException($"Unable to deserialize the content:{Environment.NewLine}{content}");
 
-    internal static string? GetNextLinkUrl(HttpResponseMessage response)
+    private static string? GetNextLinkUrl(HttpResponseMessage response)
     {
         if (response.Headers.TryGetValues("Link", out IEnumerable<string>? linkValues))
         {

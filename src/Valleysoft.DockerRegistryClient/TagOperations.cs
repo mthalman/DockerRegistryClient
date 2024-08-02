@@ -27,13 +27,7 @@ internal class TagOperations : ITagOperations
            "Repository not found.",
            () => this.Client.SendRequestAsync(
                request,
-               GetResult,
+               RegistryClient.GetPageResult<RepositoryTags>,
                cancellationToken)).ConfigureAwait(false);
-    }
-
-    private static Page<RepositoryTags> GetResult(HttpResponseMessage response, string content)
-    {
-        string? nextLink = RegistryClient.GetNextLinkUrl(response);
-        return new Page<RepositoryTags>(RegistryClient.GetResult<RepositoryTags>(response, content), nextLink);
     }
 }
