@@ -27,13 +27,7 @@ internal class CatalogOperations : ICatalogOperations
             "Catalog page not found.",
             () => this.Client.SendRequestAsync(
                 request,
-                GetResult,
+                RegistryClient.GetPageResult<Catalog>,
                 cancellationToken)).ConfigureAwait(false);
-    }
-        
-    private static Page<Catalog> GetResult(HttpResponseMessage response, string content)
-    {
-        string? nextLink = RegistryClient.GetNextLinkUrl(response);
-        return new Page<Catalog>(RegistryClient.GetResult<Catalog>(response, content), nextLink);
     }
 }
