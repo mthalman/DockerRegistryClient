@@ -21,10 +21,4 @@ public class ManifestConfig : IDescriptor
     /// </summary>
     [JsonPropertyName("digest")]
     public string Digest { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Provides a list of URLs from which the content may be fetched. Content should be verified against the digest and size. This field is optional and uncommon.
-    /// </summary>
-    [JsonPropertyName("urls")]
-    public string[] Urls { get; set; } = Array.Empty<string>();
 }

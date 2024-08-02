@@ -1,8 +1,8 @@
 ﻿using System.Net.Http.Headers;
 using System.Text.Json;
-using Valleysoft.DockerRegistryClient.Models.Manifest.Oci;
 using Valleysoft.DockerRegistryClient.Models.Manifests;
 using Valleysoft.DockerRegistryClient.Models.Manifests.Docker;
+using Valleysoft.DockerRegistryClient.Models.Manifests.Oci;
 
 namespace Valleysoft.DockerRegistryClient;
 

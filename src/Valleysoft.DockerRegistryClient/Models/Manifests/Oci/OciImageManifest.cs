@@ -1,10 +1,9 @@
 ﻿using System.Text.Json.Serialization;
-using Valleysoft.DockerRegistryClient.Models.Manifests;
 
-namespace Valleysoft.DockerRegistryClient.Models.Manifest.Oci;
+namespace Valleysoft.DockerRegistryClient.Models.Manifests.Oci;
 
 // https://github.com/opencontainers/image-spec/blob/v1.0/manifest.md
-public class OciImageManifest : Manifests.Manifest, IImageManifest
+public class OciImageManifest : Manifest, IImageManifest
 {
     public OciImageManifest()
     {

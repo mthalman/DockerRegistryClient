@@ -1,7 +1,5 @@
 ﻿using System.Text.Json.Serialization;
-using Valleysoft.DockerRegistryClient.Models.Manifests;
-
-namespace Valleysoft.DockerRegistryClient.Models.Manifest.Oci;
+namespace Valleysoft.DockerRegistryClient.Models.Manifests.Oci;
 
 // https://github.com/opencontainers/image-spec/blob/v1.0/descriptor.md
 public class OciDescriptor : IDescriptor
@@ -23,4 +21,7 @@ public class OciDescriptor : IDescriptor
 
     [JsonPropertyName("data")]
     public string? Data { get; set; }
+
+    [JsonPropertyName("artifactType")]
+    public string? ArtifactType { get; set; }
 }
