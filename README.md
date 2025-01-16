@@ -12,3 +12,7 @@ foreach (string tag in tagsPage.Value.Tags)
   Console.WriteLine(tag);
 }
 ```
+
+## Download
+
+Available from NuGet at https://www.nuget.org/packages/Valleysoft.DockerRegistryClient
