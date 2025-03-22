@@ -122,17 +122,20 @@ public class RegistryClient : IDisposable
             string errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 #endif
 
-            ErrorResult? errorResult;
+            ErrorResult? errorResult = null;
 
-            // Handle special case for some registries like mcr.microsoft.com that can return an XML error response
-            // instead of JSON.
-            if (response.Content.Headers.ContentType?.MediaType == XmlMediaType)
+            if (!string.IsNullOrEmpty(errorContent))
             {
-                errorResult = ParseXmlErrorResult(errorContent);
-            }
-            else
-            {
-                errorResult = JsonSerializer.Deserialize<ErrorResult?>(errorContent);
+                // Handle special case for some registries like mcr.microsoft.com that can return an XML error response
+                // instead of JSON.
+                if (response.Content.Headers.ContentType?.MediaType == XmlMediaType)
+                {
+                    errorResult = ParseXmlErrorResult(errorContent);
+                }
+                else
+                {
+                    errorResult = JsonSerializer.Deserialize<ErrorResult?>(errorContent);
+                }
             }
 
             throw new RegistryException(
