@@ -28,12 +28,11 @@ public class RegistryClient : IDisposable
     }
 
     public RegistryClient(string registry, IRegistryClientCredentials? serviceClientCredentials)
-        : this(registry, serviceClientCredentials, httpClient: null, disposeHttpClient: false)
+        : this(registry, serviceClientCredentials, httpClient: null)
     {
-            
     }
 
-    private RegistryClient(string registry, IRegistryClientCredentials? serviceClientCredentials, HttpClient? httpClient, bool disposeHttpClient)
+    public RegistryClient(string registry, IRegistryClientCredentials? serviceClientCredentials, HttpClient? httpClient, bool disposeHttpClient = false)
     {
         if (httpClient is null)
         {
