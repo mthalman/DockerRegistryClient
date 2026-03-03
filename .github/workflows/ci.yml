@@ -13,6 +13,8 @@ defaults:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      checks: write
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -25,3 +27,15 @@ jobs:
 
       - name: Build
         run: dotnet build -c Release --no-restore
+
+      - name: Test
+        run: dotnet test -c Release --no-restore --no-build --logger trx --results-directory TestResults
+
+      - name: Test Results
+        uses: dorny/test-reporter@v2
+        if: always() && !cancelled()
+        with:
+          name: Test Results
+          path: src/TestResults/*.trx
+          reporter: dotnet-trx
+          fail-on-error: true
