@@ -57,3 +57,33 @@ Created comprehensive test suite from scratch for DockerRegistryClient:
 - Build: `dotnet build src/Valleysoft.DockerRegistryClient.Tests/`
 - Run: `dotnet test src/Valleysoft.DockerRegistryClient.Tests/`
 - All 51 tests pass successfully
+
+### 2026-03-03: HTTP Registry Support Tests (Issue #76)
+
+Added comprehensive tests for HTTP/HTTPS scheme handling in `RegistryClient` constructor:
+
+**Test Coverage:**
+- Used `[Theory]` with `[InlineData]` to parameterize 6 test cases covering all scheme variations
+- Test cases verify both `BaseUri` (includes scheme) and `Registry` (host only) properties
+- Scenarios tested:
+  1. Explicit `http://` scheme → BaseUri uses HTTP
+  2. Explicit `https://` scheme → BaseUri uses HTTPS
+  3. No scheme (backward compat) → BaseUri defaults to HTTPS
+  4. HTTP with port → BaseUri preserves port in HTTP scheme
+  5. HTTPS with port → BaseUri preserves port in HTTPS scheme
+  6. No scheme with port → BaseUri defaults to HTTPS with port
+
+**Pattern Observations:**
+- Kept existing `Constructor_ValidRegistry_SetsProperties` test unchanged to ensure backward compatibility
+- Added new parameterized test `Constructor_WithSchemeVariations_SetsCorrectBaseUriAndRegistry`
+- This pattern is efficient: 6 scenarios tested with single method vs 6 separate [Fact] methods
+- All assertions verify both BaseUri (full URL with scheme) and Registry (host:port only)
+
+**Test Results:**
+- Total tests: 57 (51 existing + 6 new scheme variations)
+- All tests pass successfully
+- Build time: ~4s, Test execution: ~1.4s
+
+## Completed Work Sessions
+
+📌 Team update (2026-03-03T03:52:30Z): HTTP Registry Support (Issue #76) test coverage completed — 6 new parameterized tests added covering http://, https://, and no-scheme scenarios with ports — decided by Parker
