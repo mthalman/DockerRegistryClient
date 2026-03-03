@@ -23,3 +23,10 @@
 **Implementation:** Added scheme detection (case-insensitive), parses full URI when scheme present, extracts host for Registry property, uses provided scheme in BaseUri, defaults to https:// when absent, ensures BaseUri always has trailing slash.
 **Impact:** Backward compatible with scheme-less inputs; new capability for explicit HTTP registries (e.g., `http://registry.local:5000`); Registry property remains as host[:port] format; all 57 existing tests pass without modification.
 **Example:** `new RegistryClient("http://registry.local:5000")` → Registry="registry.local:5000", BaseUri="http://registry.local:5000/"
+
+### 2026-03-03T04:19:00Z: README Restructure — Documentation Expansion
+**By:** Parker (Core Dev)
+**When:** 2026-03-03
+**What:** Rewrote README.md and created 7 sub-documents in `docs/` covering authentication, tags, manifests, blobs, catalog, referrers, and error handling. The README now serves as a concise overview with an API table linking to detailed sub-docs.
+**Why:** The previous README showed only a basic tags example (~10% API coverage). The new structure gives full API coverage with runnable examples, pagination patterns, manifest type hierarchy, and the blob upload workflow. Cross-references between docs keep things DRY (pagination pattern explained once in tags.md, referenced elsewhere).
+**Scope:** Documentation only — no code changes.
