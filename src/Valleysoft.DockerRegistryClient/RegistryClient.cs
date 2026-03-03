@@ -47,8 +47,17 @@ public class RegistryClient : IDisposable
 
         this.disposeHttpClient = disposeHttpClient;
 
-        this.Registry = registry ?? throw new ArgumentNullException(nameof(registry));
-        this.BaseUri = new Uri($"https://{this.Registry}");
+        if (registry is null)
+        {
+            throw new ArgumentNullException(nameof(registry));
+        }
+
+        Uri registryUri = registry.Contains("://")
+            ? new Uri(registry)
+            : new Uri($"https://{registry}");
+
+        this.Registry = registryUri.Host + (registryUri.IsDefaultPort ? string.Empty : $":{registryUri.Port}");
+        this.BaseUri = new Uri(registryUri.GetLeftPart(UriPartial.Authority));
 
         this.credentials = serviceClientCredentials;
 

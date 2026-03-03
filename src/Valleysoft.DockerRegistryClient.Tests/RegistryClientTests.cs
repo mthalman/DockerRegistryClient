@@ -27,6 +27,24 @@ public class RegistryClientTests
         Assert.NotNull(client.Referrers);
     }
 
+    [Theory]
+    [InlineData("http://myregistry.io", "http://myregistry.io/", "myregistry.io")]
+    [InlineData("https://myregistry.io", "https://myregistry.io/", "myregistry.io")]
+    [InlineData("myregistry.io", "https://myregistry.io/", "myregistry.io")]
+    [InlineData("http://myregistry.io:5000", "http://myregistry.io:5000/", "myregistry.io:5000")]
+    [InlineData("https://myregistry.io:5000", "https://myregistry.io:5000/", "myregistry.io:5000")]
+    [InlineData("myregistry.io:5000", "https://myregistry.io:5000/", "myregistry.io:5000")]
+    public void Constructor_WithSchemeVariations_SetsCorrectBaseUriAndRegistry(
+        string registryInput,
+        string expectedBaseUri,
+        string expectedRegistry)
+    {
+        var client = new RegistryClient(registryInput);
+        
+        Assert.Equal(expectedRegistry, client.Registry);
+        Assert.Equal(expectedBaseUri, client.BaseUri.ToString());
+    }
+
     [Fact]
     public void Constructor_WithCustomHttpClient_UsesProvidedClient()
     {
