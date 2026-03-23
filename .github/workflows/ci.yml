@@ -32,7 +32,7 @@ jobs:
         run: dotnet test -c Release --no-restore --no-build --logger trx --results-directory TestResults
 
       - name: Test Results
-        uses: dorny/test-reporter@b082adf0eced0765477756c2a610396589b8c637 # v2
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3
         if: always() && !cancelled()
         with:
           name: Test Results
