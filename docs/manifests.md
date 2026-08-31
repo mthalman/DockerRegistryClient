@@ -2,7 +2,7 @@
 
 Access manifest operations via `client.Manifests`.
 
-## Getting a Manifest
+## Get a manifest
 
 `GetAsync` returns a `ManifestInfo` containing the media type, content digest, and deserialized manifest:
 
@@ -14,13 +14,16 @@ Console.WriteLine($"Media type: {info.MediaType}");
 Console.WriteLine($"Digest: {info.DockerContentDigest}");
 ```
 
-## Checking Existence
+## Check whether a manifest exists
 
 ```csharp
-bool exists = await client.Manifests.ExistsAsync("dotnet/sdk", "sha256:abc123...");
+bool exists = await client.Manifests.ExistsAsync("dotnet/sdk", "latest");
 ```
 
-## Getting a Digest
+`ExistsAsync` accepts a tag or digest and returns `false` for any non-success
+HTTP status.
+
+## Get a digest
 
 Retrieve the digest for a tag or digest reference without downloading the full manifest:
 
@@ -28,26 +31,26 @@ Retrieve the digest for a tag or digest reference without downloading the full m
 string digest = await client.Manifests.GetDigestAsync("dotnet/sdk", "latest");
 ```
 
-## Manifest Types
+## Manifest types
 
 The `Manifest` property on `ManifestInfo` is typed as `IManifest`. The type hierarchy:
 
 | Interface | Description |
-|---|---|
-| `IManifest` | Base — has `SchemaVersion` and `MediaType` |
-| `IImageManifest` | Single image — has `Config` and `Layers` |
-| `IManifestList` | Multi-arch index — has `Manifests` |
+| --- | --- |
+| `IManifest` | Base type with `SchemaVersion` and `MediaType` |
+| `IImageManifest` | Single image with `Config` and `Layers` |
+| `IManifestList` | Multi-platform index with `Manifests` |
 
 Concrete implementations:
 
 | Class | Media Type Constant | Format |
-|---|---|---|
+| --- | --- | --- |
 | `DockerManifest` | `ManifestMediaTypes.DockerManifestSchema2` | Docker V2 image manifest |
 | `ManifestList` | `ManifestMediaTypes.DockerManifestList` | Docker V2 manifest list |
 | `OciImageManifest` | `ManifestMediaTypes.OciManifestSchema1` | OCI image manifest |
 | `OciImageIndex` | `ManifestMediaTypes.OciImageIndex1` | OCI image index |
 
-## Pattern Matching
+## Handle manifest types
 
 Use pattern matching to handle different manifest types:
 
