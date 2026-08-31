@@ -16,7 +16,7 @@ internal class ReferrerOperations : IReferrerOperations
         string url = $"v2/{repositoryName}/referrers/{digest}";
         if (!string.IsNullOrEmpty(artifactType))
         {
-            url = $"{url}?artifactType={artifactType}";
+            url = $"{url}?artifactType={Uri.EscapeDataString(artifactType)}";
         }
 
         return await GetNextAsync(url, cancellationToken);
