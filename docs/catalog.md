@@ -2,7 +2,7 @@
 
 Access catalog operations via `client.Catalog`.
 
-## Listing Repositories
+## List repositories
 
 ```csharp
 using RegistryClient client = new("myregistry.example.com", credentials);
@@ -13,15 +13,16 @@ foreach (string repo in catalogPage.Value.RepositoryNames)
 }
 ```
 
-## Limiting Results
+## Limit results
 
 ```csharp
 Page<Catalog> catalogPage = await client.Catalog.GetAsync(count: 50);
 ```
 
-## Pagination
+## Retrieve every page
 
-Pagination follows the same `Page<T>` pattern as [Tags](tags.md):
+When the registry returns another page, `NextPageLink` contains the URL to pass
+to `GetNextAsync`:
 
 ```csharp
 Page<Catalog> page = await client.Catalog.GetAsync(count: 100);

@@ -2,7 +2,7 @@
 
 Access tag operations via `client.Tags`.
 
-## Listing Tags
+## List tags
 
 ```csharp
 using RegistryClient client = new("mcr.microsoft.com");
@@ -13,7 +13,7 @@ foreach (string tag in tagsPage.Value.Tags)
 }
 ```
 
-## Limiting Results
+## Limit results
 
 Pass a `count` parameter to limit the number of tags returned per page:
 
@@ -21,7 +21,7 @@ Pass a `count` parameter to limit the number of tags returned per page:
 Page<RepositoryTags> tagsPage = await client.Tags.GetAsync("dotnet/sdk", count: 10);
 ```
 
-## Pagination
+## Retrieve every page
 
 Results are returned as `Page<RepositoryTags>`. When more results are available, `NextPageLink` is non-null. Use `GetNextAsync` to retrieve subsequent pages:
 

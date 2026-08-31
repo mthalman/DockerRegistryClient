@@ -2,9 +2,11 @@
 
 Access referrer operations via `client.Referrers`.
 
-The [OCI Referrers API](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-referrers) discovers artifacts that reference a given manifest digest — such as SBOMs, signatures, and attestations.
+The [OCI Referrers API](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-referrers)
+discovers artifacts that reference a given manifest digest, such as SBOMs,
+signatures, and attestations.
 
-## Getting Referrers
+## Get referrers
 
 ```csharp
 using RegistryClient client = new("myregistry.example.com", credentials);
@@ -17,7 +19,7 @@ foreach (var manifest in referrersPage.Value.Manifests)
 }
 ```
 
-## Filtering by Artifact Type
+## Filter by artifact type
 
 Pass an `artifactType` to filter results to a specific kind of artifact:
 
@@ -26,9 +28,10 @@ Page<OciImageIndex> sboms = await client.Referrers.GetAsync(
     "myrepo", "sha256:abc123...", artifactType: "application/spdx+json");
 ```
 
-## Pagination
+## Retrieve every page
 
-Pagination follows the same `Page<T>` pattern as [Tags](tags.md):
+When the registry returns another page, `NextPageLink` contains the URL to pass
+to `GetNextAsync`:
 
 ```csharp
 Page<OciImageIndex> page = await client.Referrers.GetAsync("myrepo", "sha256:abc123...");
