@@ -26,6 +26,22 @@ public sealed class ReferrerOperationsTests
     }
 
     [Fact]
+    public async Task GetAsync_NullCollections_ReturnsEmptyCollections()
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Get,
+            "https://registry.example/v2/repository/referrers/sha256:subject",
+            CreateJsonResponse("""{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":null,"annotations":null}"""));
+        using var client = new RegistryClient("registry.example", null, new HttpClient(handler));
+
+        Page<OciImageIndex> page = await client.Referrers.GetAsync("repository", "sha256:subject");
+
+        Assert.Empty(page.Value.Manifests);
+        Assert.Empty(page.Value.Annotations);
+    }
+
+    [Fact]
     public async Task GetAsync_WithFilter_AndGetNextAsync_ReturnDescriptorPages()
     {
         const string ArtifactType = "application/spdx+json";

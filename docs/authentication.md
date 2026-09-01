@@ -96,5 +96,7 @@ When `RegistryClient` creates the `HttpClient`, it disposes the client with the
 
 An injected `HttpClient` does not include the library's internal OAuth handler.
 The supplied credentials still set the initial `Authorization` header, but
-automatic bearer challenge handling is unavailable. Use the default
-`HttpClient` when you need the built-in OAuth token exchange.
+automatic bearer challenge handling and request-scoped redirect restrictions
+are unavailable. The supplied pipeline is responsible for applying an
+appropriate redirect policy. Use the default `HttpClient` when you need the
+built-in OAuth token exchange and redirect handling.

@@ -107,7 +107,7 @@ internal sealed class RedirectDelegatingHandler : DelegatingHandler
         {
             redirectUri = new UriBuilder(redirectUri)
             {
-                Fragment = requestUri.Fragment
+                Fragment = requestUri.Fragment.TrimStart('#')
             }.Uri;
         }
 
