@@ -36,7 +36,11 @@ public class RegistryClient : IDisposable
     {
         if (httpClient is null)
         {
-            this.HttpClient = new HttpClient(new OAuthDelegatingHandler(new HttpClientHandler()));
+            this.HttpClient = CreateHttpClient(
+                new HttpClientHandler
+                {
+                    AllowAutoRedirect = false
+                });
             disposeHttpClient = true;
 
         }
@@ -67,6 +71,19 @@ public class RegistryClient : IDisposable
         this.Manifests = new ManifestOperations(this);
         this.Referrers = new ReferrerOperations(this);
     }
+
+    internal RegistryClient(
+        string registry,
+        IRegistryClientCredentials? serviceClientCredentials,
+        HttpMessageHandler innerHandler)
+        : this(registry, serviceClientCredentials, CreateHttpClient(innerHandler), disposeHttpClient: true)
+    {
+    }
+
+    private static HttpClient CreateHttpClient(HttpMessageHandler innerHandler) =>
+        new(
+            new OAuthDelegatingHandler(
+                new RedirectDelegatingHandler(innerHandler)));
 
     internal Task<T> SendRequestAsync<T>(HttpRequestMessage request, CancellationToken cancellationToken = default) =>
         SendRequestAsync(request, (Func<HttpResponseMessage, string, T>?)null, cancellationToken);
@@ -130,21 +147,7 @@ public class RegistryClient : IDisposable
             string errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 #endif
 
-            ErrorResult? errorResult = null;
-
-            if (!string.IsNullOrEmpty(errorContent))
-            {
-                // Handle special case for some registries like mcr.microsoft.com that can return an XML error response
-                // instead of JSON.
-                if (response.Content.Headers.ContentType?.MediaType == XmlMediaType)
-                {
-                    errorResult = ParseXmlErrorResult(errorContent);
-                }
-                else
-                {
-                    errorResult = JsonSerializer.Deserialize<ErrorResult?>(errorContent);
-                }
-            }
+            ErrorResult? errorResult = ParseErrorResult(response, errorContent);
 
             throw new RegistryException(
                 $"Response status code does not indicate success: {response.StatusCode}. See {nameof(RegistryException.Errors)} property for more detail. ({response.ReasonPhrase})")
@@ -156,6 +159,35 @@ public class RegistryClient : IDisposable
         response.EnsureSuccessStatusCode();
 
         return response;
+    }
+
+    private static ErrorResult? ParseErrorResult(HttpResponseMessage response, string errorContent)
+    {
+        if (string.IsNullOrEmpty(errorContent))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<ErrorResult?>(errorContent);
+        }
+        catch (JsonException)
+        {
+            if (response.Content.Headers.ContentType?.MediaType != XmlMediaType)
+            {
+                return null;
+            }
+        }
+
+        try
+        {
+            return ParseXmlErrorResult(errorContent);
+        }
+        catch (XmlException)
+        {
+            return null;
+        }
     }
 
     private static ErrorResult ParseXmlErrorResult(string errorContent)

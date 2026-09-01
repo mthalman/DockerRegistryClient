@@ -4,7 +4,8 @@ Access referrer operations via `client.Referrers`.
 
 The [OCI Referrers API](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-referrers)
 discovers artifacts that reference a given manifest digest, such as SBOMs,
-signatures, and attestations.
+signatures, and attestations. If a registry does not implement the referrers
+endpoint, the client automatically queries the OCI referrers tag fallback.
 
 ## Get referrers
 
