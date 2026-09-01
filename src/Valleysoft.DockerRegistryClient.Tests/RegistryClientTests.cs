@@ -204,6 +204,94 @@ public class RegistryClientTests
     }
 
     [Fact]
+    public async Task SendRequestCoreAsync_ErrorWithPlainTextBody_ThrowsRegistryException()
+    {
+        var mockHandler = new MockHttpMessageHandler();
+        var response = new HttpResponseMessage(HttpStatusCode.NotFound)
+        {
+            Content = new StringContent("404 page not found")
+        };
+        response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+        mockHandler.AddExpectedRequest(HttpMethod.Get, "https://myregistry.io/v2/test", response);
+
+        var httpClient = new HttpClient(mockHandler);
+        var client = new RegistryClient("myregistry.io", null, httpClient);
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://myregistry.io/v2/test");
+
+        var ex = await Assert.ThrowsAsync<RegistryException>(() => client.SendRequestCoreAsync(request));
+
+        Assert.Equal(HttpStatusCode.NotFound, ex.StatusCode);
+        Assert.Empty(ex.Errors);
+    }
+
+    [Fact]
+    public async Task SendRequestCoreAsync_JsonErrorWithPlainTextContentType_PreservesErrors()
+    {
+        var mockHandler = new MockHttpMessageHandler();
+        var response = new HttpResponseMessage(HttpStatusCode.NotFound)
+        {
+            Content = new StringContent(
+                """{"errors":[{"code":"MANIFEST_UNKNOWN","message":"manifest unknown"}]}""")
+        };
+        response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+        mockHandler.AddExpectedRequest(HttpMethod.Get, "https://myregistry.io/v2/test", response);
+
+        var httpClient = new HttpClient(mockHandler);
+        var client = new RegistryClient("myregistry.io", null, httpClient);
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://myregistry.io/v2/test");
+
+        var ex = await Assert.ThrowsAsync<RegistryException>(() => client.SendRequestCoreAsync(request));
+
+        Assert.Equal(HttpStatusCode.NotFound, ex.StatusCode);
+        Error error = Assert.Single(ex.Errors);
+        Assert.Equal("MANIFEST_UNKNOWN", error.Code);
+        Assert.Equal("manifest unknown", error.Message);
+    }
+
+    [Fact]
+    public async Task SendRequestCoreAsync_JsonErrorWithXmlContentType_PreservesErrors()
+    {
+        var mockHandler = new MockHttpMessageHandler();
+        var response = new HttpResponseMessage(HttpStatusCode.NotFound)
+        {
+            Content = new StringContent(
+                """{"errors":[{"code":"MANIFEST_UNKNOWN","message":"manifest unknown"}]}""")
+        };
+        response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/xml");
+        mockHandler.AddExpectedRequest(HttpMethod.Get, "https://myregistry.io/v2/test", response);
+
+        var httpClient = new HttpClient(mockHandler);
+        var client = new RegistryClient("myregistry.io", null, httpClient);
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://myregistry.io/v2/test");
+
+        var ex = await Assert.ThrowsAsync<RegistryException>(() => client.SendRequestCoreAsync(request));
+
+        Error error = Assert.Single(ex.Errors);
+        Assert.Equal("MANIFEST_UNKNOWN", error.Code);
+    }
+
+    [Fact]
+    public async Task SendRequestCoreAsync_MalformedErrorBody_ThrowsRegistryException()
+    {
+        var mockHandler = new MockHttpMessageHandler();
+        var response = new HttpResponseMessage(HttpStatusCode.NotFound)
+        {
+            Content = new StringContent("not json")
+        };
+        response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        mockHandler.AddExpectedRequest(HttpMethod.Get, "https://myregistry.io/v2/test", response);
+
+        var httpClient = new HttpClient(mockHandler);
+        var client = new RegistryClient("myregistry.io", null, httpClient);
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://myregistry.io/v2/test");
+
+        var ex = await Assert.ThrowsAsync<RegistryException>(() => client.SendRequestCoreAsync(request));
+
+        Assert.Equal(HttpStatusCode.NotFound, ex.StatusCode);
+        Assert.Empty(ex.Errors);
+    }
+
+    [Fact]
     public async Task GetPageResult_WithLinkHeader_ReturnsPageWithNextLink()
     {
         var mockHandler = new MockHttpMessageHandler();

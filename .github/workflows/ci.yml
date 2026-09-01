@@ -28,8 +28,22 @@ jobs:
       - name: Build
         run: dotnet build -c Release --no-restore
 
-      - name: Test
-        run: dotnet test -c Release --no-restore --no-build --logger trx --results-directory TestResults
+      - name: Test unit tests
+        run: >-
+          dotnet test -c Release --no-restore --no-build
+          --filter "Category!=Integration"
+          --logger "trx;LogFileName=unit-tests.trx"
+          --results-directory TestResults
+
+      - name: Verify Docker
+        run: docker info
+
+      - name: Test integration tests
+        run: >-
+          dotnet test -c Release --no-restore --no-build
+          --filter "Category=Integration"
+          --logger "trx;LogFileName=integration-tests.trx"
+          --results-directory TestResults
 
       - name: Test Results
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3
