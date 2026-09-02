@@ -67,7 +67,7 @@ public class RegistryClientTests
     }
 
     [Fact]
-    public void Dispose_CustomHttpClientNotDisposable_DoesNotDisposeClient()
+    public async Task Dispose_CustomHttpClientNotDisposable_DoesNotDisposeClient()
     {
         var mockHandler = new MockHttpMessageHandler();
         var httpClient = new HttpClient(mockHandler);
@@ -77,8 +77,7 @@ public class RegistryClientTests
         
         // HttpClient should still be usable
         mockHandler.AddExpectedRequest(HttpMethod.Get, "http://example.com/", new HttpResponseMessage(HttpStatusCode.OK));
-        var task = httpClient.GetAsync("http://example.com/");
-        task.Wait();
+        await httpClient.GetAsync("http://example.com/");
     }
 
     [Fact]
