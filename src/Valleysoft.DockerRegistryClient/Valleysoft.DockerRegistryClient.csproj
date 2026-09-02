@@ -16,9 +16,11 @@
     <RepositoryUrl>https://github.com/mthalman/DockerRegistryClient</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="MinVer" Version="7.0.0" PrivateAssets="All" />
     <PackageReference Include="System.Net.Http.Json" Version="10.0.11" />
   </ItemGroup>
 
