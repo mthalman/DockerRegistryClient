@@ -37,3 +37,25 @@ Paginated results are wrapped in `Page<T>`, which carries a `NextPageLink` for c
 - **Error handling**: Unsuccessful HTTP responses throw `RegistryException` with `Errors` and `StatusCode` properties. Operations that check existence (e.g., `ExistsAsync`) return `bool` instead of throwing.
 - **C# language version**: 12.0 with nullable reference types and implicit usings enabled. `CompilerServices.cs` provides an `IsExternalInit` shim for `init` properties on netstandard2.0.
 - **Internal visibility**: Operation implementation classes are `internal`; only interfaces and models are public.
+
+## Pull request labels
+
+After creating a pull request, apply exactly one semantic-version label based on
+the highest-impact change in the pull request:
+
+- `semver:major` for a breaking change
+- `semver:minor` for a backward-compatible feature
+- `semver:patch` for a backward-compatible fix or maintenance change
+
+Also apply the release-note category that best describes the change:
+
+- `enhancement` for features
+- `bug` for fixes
+- `documentation` for documentation-only changes
+- `dependencies` for dependency updates
+- No category label for maintenance, refactoring, test, or infrastructure changes
+
+Apply `skip-changelog` only when the pull request is intentionally excluded from
+the public release notes. Before considering pull request creation complete,
+verify that the pull request has the intended semantic-version and category
+labels.
