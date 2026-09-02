@@ -77,7 +77,7 @@ public class RegistryClientTests
         
         // HttpClient should still be usable
         mockHandler.AddExpectedRequest(HttpMethod.Get, "http://example.com/", new HttpResponseMessage(HttpStatusCode.OK));
-        await httpClient.GetAsync("http://example.com/");
+        using var response = await httpClient.GetAsync("http://example.com/");
     }
 
     [Fact]
