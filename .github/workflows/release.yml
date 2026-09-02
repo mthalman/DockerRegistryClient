@@ -1,11 +1,9 @@
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      packageVersion:
-        description: 'Package version'
-        required: true
+  push:
+    tags:
+      - 'v*'
 
 defaults:
   run:
@@ -17,6 +15,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET Core SDK
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -28,9 +28,10 @@ jobs:
         run: dotnet build -c Release --no-restore Valleysoft.DockerRegistryClient
 
       - name: Pack
-        env:
-          PACKAGE_VERSION: ${{ github.event.inputs.packageVersion }}
-        run: dotnet pack -c Release -p:Version=$PACKAGE_VERSION Valleysoft.DockerRegistryClient
-      
+        run: dotnet pack -c Release --no-build Valleysoft.DockerRegistryClient
+
       - name: Publish Package
-        run: dotnet nuget push "Valleysoft.DockerRegistryClient/bin/Release/*.nupkg" -k ${{secrets.NUGET_ORG_API_KEY}} -s https://nuget.org
+        run: |
+          package_path="Valleysoft.DockerRegistryClient/bin/Release/Valleysoft.DockerRegistryClient.${GITHUB_REF_NAME#v}.nupkg"
+          test -f "$package_path"
+          dotnet nuget push "$package_path" -k ${{secrets.NUGET_ORG_API_KEY}} -s https://nuget.org
