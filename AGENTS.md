@@ -57,7 +57,7 @@ Apply at most one canonical visible category:
 - No category for maintenance, refactoring, tests, or infrastructure
 
 For mixed pull requests, classify by the highest-impact public change. A
-tests-heavy pull request that fixes a product bug is `bug`; a dependency pull
+test-heavy pull request that fixes a product bug is `bug`; a dependency pull
 request spanning production and tooling dependencies remains `dependencies`.
 
 Apply `skip-changelog` to internal-only test dependency updates, CI action
