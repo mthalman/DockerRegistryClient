@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Valleysoft.DockerRegistryClient.Models.Manifests;
@@ -28,17 +29,19 @@ public class ManifestOperationsTests
         handler.AddExpectedRequest(
             request =>
             {
-                string[] acceptedTypes = request.Headers.Accept.Select(value => value.MediaType!).ToArray();
+                MediaTypeWithQualityHeaderValue[] acceptedTypes = request.Headers.Accept.ToArray();
                 return request.Method == HttpMethod.Get &&
                     request.RequestUri == new Uri("https://registry.example/v2/repo/manifests/latest") &&
-                    acceptedTypes.SequenceEqual(new[]
+                    acceptedTypes.Select(value => value.MediaType).SequenceEqual(new[]
                     {
                         ManifestMediaTypes.DockerManifestSchema2,
                         ManifestMediaTypes.DockerManifestList,
                         ManifestMediaTypes.OciManifestSchema1,
                         ManifestMediaTypes.OciImageIndex1,
                         "*/*"
-                    });
+                    }) &&
+                    acceptedTypes.Take(4).All(value => value.Quality is null) &&
+                    acceptedTypes[4].Quality == 0.1;
             },
             ManifestResponse(mediaType));
         using var client = CreateClient(handler);

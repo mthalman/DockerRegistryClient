@@ -79,7 +79,7 @@ internal class ManifestOperations : IManifestOperations
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.DockerManifestList));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.OciManifestSchema1));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.OciImageIndex1));
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*", quality: 0.1));
         return request;
     }
 
