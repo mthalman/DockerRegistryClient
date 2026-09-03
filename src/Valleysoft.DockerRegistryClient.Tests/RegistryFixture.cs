@@ -72,6 +72,12 @@ public sealed class RegistryFixture : IAsyncLifetime
             ? new RegistryClient(BaseUri.AbsoluteUri, new BasicAuthenticationCredentials(UserName, Password))
             : new RegistryClient(BaseUri.AbsoluteUri);
 
+    public RegistryClient CreateClient(HttpMessageHandler innerHandler) =>
+        new(
+            BaseUri.AbsoluteUri,
+            new BasicAuthenticationCredentials(UserName, Password),
+            innerHandler);
+
     public string GetRepositoryName(string testName) =>
         $"integration/{testName.ToLowerInvariant().Replace('_', '-')}-{Guid.NewGuid():N}";
 

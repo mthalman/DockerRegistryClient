@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using Valleysoft.DockerRegistryClient.Models.Manifests;
 using Valleysoft.DockerRegistryClient.Models.Manifests.Docker;
@@ -143,6 +144,7 @@ public sealed class ManifestIntegrationTests
         DockerManifest docker = Assert.IsType<DockerManifest>(dockerInfo.Manifest);
         Assert.Equal(config.Digest, docker.Config!.Digest);
         Assert.Equal(layer.Digest, Assert.Single(docker.Layers).Digest);
+        Assert.Equal(dockerManifest.Json, Encoding.UTF8.GetString(dockerInfo.Content.Span));
 
         ManifestInfo ociInfo = await client.Manifests.GetAsync(repository, ociManifest.Digest);
         Assert.Equal(ManifestMediaTypes.OciManifestSchema1, ociInfo.MediaType);
@@ -168,6 +170,15 @@ public sealed class ManifestIntegrationTests
         Assert.Equal("v8", ociReference.Platform.Variant);
         Assert.Equal("stable", ociReference.Annotations["channel"]);
         Assert.Equal(ociIndex.Digest, ociIndexInfo.DockerContentDigest);
+
+        const string customMediaType = "application/vnd.example.manifest.v1+json";
+        using RegistryClient rawClient = fixture.CreateClient(new ManifestMediaTypeHandler(customMediaType));
+        ManifestInfo customInfo = await rawClient.Manifests.GetAsync(repository, "oci");
+        Assert.Equal(customMediaType, customInfo.MediaType);
+        Assert.Equal(ociManifest.Digest, customInfo.DockerContentDigest);
+        RawManifest rawManifest = Assert.IsType<RawManifest>(customInfo.Manifest);
+        Assert.Equal(ociManifest.Json, Encoding.UTF8.GetString(rawManifest.Content.Span));
+        Assert.Equal(ociManifest.Json, Encoding.UTF8.GetString(customInfo.Content.Span));
     }
 
     [Fact]
@@ -205,5 +216,23 @@ public sealed class ManifestIntegrationTests
         RegistryException innerException = Assert.IsType<RegistryException>(exception.InnerException);
         Assert.Equal(HttpStatusCode.NotFound, innerException.StatusCode);
         Assert.Contains(innerException.Errors, error => error.Code == "MANIFEST_UNKNOWN");
+    }
+
+    private sealed class ManifestMediaTypeHandler(string mediaType) : DelegatingHandler(new HttpClientHandler())
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            HttpResponseMessage response = await base.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode &&
+                request.Method == HttpMethod.Get &&
+                request.RequestUri?.AbsolutePath.Contains("/manifests/") == true)
+            {
+                response.Content.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
+            }
+
+            return response;
+        }
     }
 }

@@ -2,6 +2,5 @@
 
 public interface IManifest
 {
-    int SchemaVersion { get; }
     string? MediaType { get; }
 }

@@ -4,7 +4,8 @@ Access manifest operations via `client.Manifests`.
 
 ## Get a manifest
 
-`GetAsync` returns a `ManifestInfo` containing the media type, content digest, and deserialized manifest:
+`GetAsync` returns a `ManifestInfo` containing the response media type, canonical
+content digest, original content bytes, and manifest:
 
 ```csharp
 using RegistryClient client = new("mcr.microsoft.com");
@@ -12,7 +13,12 @@ ManifestInfo info = await client.Manifests.GetAsync("dotnet/sdk", "latest");
 
 Console.WriteLine($"Media type: {info.MediaType}");
 Console.WriteLine($"Digest: {info.DockerContentDigest}");
+await File.WriteAllBytesAsync("manifest.json", info.Content.ToArray());
 ```
+
+`Content` preserves the response body exactly, so it can be used for operations
+such as copying a manifest without reserializing it. Manifest content is buffered
+in memory and does not require disposal.
 
 ## Check whether a manifest exists
 
@@ -33,11 +39,16 @@ string digest = await client.Manifests.GetDigestAsync("dotnet/sdk", "latest");
 
 ## Manifest types
 
-The `Manifest` property on `ManifestInfo` is typed as `IManifest`. The type hierarchy:
+The `Manifest` property on `ManifestInfo` is typed as `IManifest`. Known Docker
+and OCI media types are deserialized to their concrete models. Other media types
+are returned as `RawManifest` so new and vendor-specific manifest formats remain
+accessible without a library update.
+
+The type hierarchy:
 
 | Interface | Description |
 | --- | --- |
-| `IManifest` | Base type with `SchemaVersion` and `MediaType` |
+| `IManifest` | Base type with the manifest media type |
 | `IImageManifest` | Single image with `Config` and `Layers` |
 | `IManifestList` | Multi-platform index with `Manifests` |
 
@@ -49,6 +60,7 @@ Concrete implementations:
 | `ManifestList` | `ManifestMediaTypes.DockerManifestList` | Docker V2 manifest list |
 | `OciImageManifest` | `ManifestMediaTypes.OciManifestSchema1` | OCI image manifest |
 | `OciImageIndex` | `ManifestMediaTypes.OciImageIndex1` | OCI image index |
+| `RawManifest` | Any other response media type | Original manifest content |
 
 ## Handle manifest types
 
@@ -71,6 +83,9 @@ switch (info.Manifest)
     case OciImageIndex ociIndex:
         Console.WriteLine($"OCI index with {ociIndex.Manifests.Length} entries");
         break;
+    case RawManifest raw:
+        Console.WriteLine($"Raw manifest with {raw.Content.Length} bytes");
+        break;
 }
 ```
 
@@ -83,3 +98,7 @@ if (info.MediaType == ManifestMediaTypes.DockerManifestList)
     // ...
 }
 ```
+
+`ManifestInfo.MediaType` and `DockerContentDigest` come from the registry's HTTP
+response headers. `RawManifest.MediaType` uses that same response media type;
+the JSON document does not need to contain its own `mediaType` field.
