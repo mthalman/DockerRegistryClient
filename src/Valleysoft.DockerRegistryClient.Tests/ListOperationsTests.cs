@@ -23,7 +23,53 @@ public class ListOperationsTests
         Page<Catalog> page = await client.Catalog.GetAsync(2);
 
         Assert.Equal(["repo1", "repo2"], page.Value.RepositoryNames);
-        Assert.Equal("/v2/_catalog?n=2&last=repo2", page.NextPageLink);
+        Assert.Equal(
+            "https://registry.example/v2/_catalog?n=2&last=repo2",
+            page.NextPageLink);
+    }
+
+    [Fact]
+    public async Task CatalogGetNextAsync_AbsoluteSameOriginLink_RequestsLink()
+    {
+        const string NextPageLink = "https://registry.example/v2/_catalog?n=2&last=repo2";
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Get,
+            NextPageLink,
+            JsonResponse(new Catalog { RepositoryNames = ["repo3"] }));
+        using var client = CreateClient(handler);
+
+        Page<Catalog> page = await client.Catalog.GetNextAsync(NextPageLink);
+
+        Assert.Equal(["repo3"], page.Value.RepositoryNames);
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task CatalogGetAllAsync_QueryRelativeLink_ResolvesAgainstCurrentPage()
+    {
+        var handler = new MockHttpMessageHandler();
+        HttpResponseMessage firstResponse =
+            JsonResponse(new Catalog { RepositoryNames = ["repo1"] });
+        firstResponse.Headers.Add("Link", "<?n=1&last=repo1>; rel=\"next\"");
+        handler.AddExpectedRequest(
+            HttpMethod.Get,
+            "https://registry.example/v2/_catalog?n=1",
+            firstResponse);
+        handler.AddExpectedRequest(
+            HttpMethod.Get,
+            "https://registry.example/v2/_catalog?n=1&last=repo1",
+            JsonResponse(new Catalog { RepositoryNames = ["repo2"] }));
+        using var client = CreateClient(handler);
+
+        List<string> repositories = [];
+        await foreach (string repository in client.Catalog.GetAllAsync(count: 1))
+        {
+            repositories.Add(repository);
+        }
+
+        Assert.Equal(["repo1", "repo2"], repositories);
+        Assert.Equal(0, handler.RemainingRequestCount);
     }
 
     [Fact]
@@ -42,6 +88,114 @@ public class ListOperationsTests
         Assert.Equal("Repository not found.", exception.Message);
         var innerException = Assert.IsType<RegistryException>(exception.InnerException);
         Assert.Equal(HttpStatusCode.NotFound, innerException.StatusCode);
+    }
+
+    [Fact]
+    public async Task TagsGetNextAsync_AbsoluteSameOriginLink_RequestsLink()
+    {
+        const string NextPageLink =
+            "https://registry.example/v2/repo/tags/list?n=2&last=v2";
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Get,
+            NextPageLink,
+            JsonResponse(new RepositoryTags { RepositoryName = "repo", Tags = ["v3"] }));
+        using var client = CreateClient(handler);
+
+        Page<RepositoryTags> page = await client.Tags.GetNextAsync(NextPageLink);
+
+        Assert.Equal(["v3"], page.Value.Tags);
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task TagsGetAllAsync_QueryRelativeLink_ResolvesAgainstCurrentPage()
+    {
+        var handler = new MockHttpMessageHandler();
+        HttpResponseMessage firstResponse = JsonResponse(
+            new RepositoryTags { RepositoryName = "repo", Tags = ["v1"] });
+        firstResponse.Headers.Add("Link", "<?n=1&last=v1>; rel=\"next\"");
+        handler.AddExpectedRequest(
+            HttpMethod.Get,
+            "https://registry.example/v2/repo/tags/list?n=1",
+            firstResponse);
+        handler.AddExpectedRequest(
+            HttpMethod.Get,
+            "https://registry.example/v2/repo/tags/list?n=1&last=v1",
+            JsonResponse(new RepositoryTags { RepositoryName = "repo", Tags = ["v2"] }));
+        using var client = CreateClient(handler);
+
+        List<string> tags = [];
+        await foreach (string tag in client.Tags.GetAllAsync("repo", count: 1))
+        {
+            tags.Add(tag);
+        }
+
+        Assert.Equal(["v1", "v2"], tags);
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    [Theory]
+    [InlineData(true, "https://attacker.example/v2/_catalog")]
+    [InlineData(true, "http://registry.example:443/v2/_catalog")]
+    [InlineData(true, "https://registry.example:444/v2/_catalog")]
+    [InlineData(false, "https://attacker.example/v2/repo/tags/list")]
+    [InlineData(false, "http://registry.example:443/v2/repo/tags/list")]
+    [InlineData(false, "https://registry.example:444/v2/repo/tags/list")]
+    public async Task GetNextAsync_CrossOriginLink_ThrowsWithoutSendingRequest(
+        bool useCatalog,
+        string nextPageLink)
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Get,
+            nextPageLink,
+            useCatalog
+                ? JsonResponse(new Catalog())
+                : JsonResponse(new RepositoryTags()));
+        using var client = CreateClient(handler);
+
+        Task request = useCatalog
+            ? client.Catalog.GetNextAsync(nextPageLink)
+            : client.Tags.GetNextAsync(nextPageLink);
+
+        InvalidOperationException exception =
+            await Assert.ThrowsAsync<InvalidOperationException>(() => request);
+
+        Assert.StartsWith($"Location '{nextPageLink}' resolves outside", exception.Message);
+        Assert.Equal(1, handler.RemainingRequestCount);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task GetAsync_CrossOriginRedirect_Throws(bool useCatalog)
+    {
+        string initialRequestUri = useCatalog
+            ? "https://registry.example/v2/_catalog"
+            : "https://registry.example/v2/repo/tags/list";
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Get,
+            initialRequestUri,
+            new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)
+            {
+                Headers =
+                {
+                    Location = new Uri("https://attacker.example/continuation")
+                }
+            });
+        using var client = new RegistryClient("registry.example", null, handler);
+
+        Task request = useCatalog
+            ? client.Catalog.GetAsync()
+            : client.Tags.GetAsync("repo");
+
+        InvalidOperationException exception =
+            await Assert.ThrowsAsync<InvalidOperationException>(() => request);
+
+        Assert.Contains("outside the configured registry origin", exception.Message);
+        Assert.Equal(0, handler.RemainingRequestCount);
     }
 
     [Fact]

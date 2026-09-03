@@ -29,17 +29,49 @@ Page<OciImageIndex> sboms = await client.Referrers.GetAsync(
     "myrepo", "sha256:abc123...", artifactType: "application/spdx+json");
 ```
 
-## Retrieve every page
+## Stream every referrer
 
-When the registry returns another page, `NextPageLink` contains the URL to pass
-to `GetNextAsync`:
+Use `GetAllAsync` to stream manifest references across every page:
 
 ```csharp
-Page<OciImageIndex> page = await client.Referrers.GetAsync("myrepo", "sha256:abc123...");
+await foreach (ManifestReference manifest in client.Referrers.GetAllAsync(
+    "myrepo",
+    "sha256:abc123..."))
+{
+    Console.WriteLine(manifest.Digest);
+}
+```
+
+The client requests each page only as the loop advances. Pass a
+`CancellationToken` to stop enumeration and any active request.
+
+## Process complete pages
+
+Use `GetAllPagesAsync` when page boundaries or page metadata are needed:
+
+```csharp
+await foreach (Page<OciImageIndex> page in client.Referrers.GetAllPagesAsync(
+    "myrepo",
+    "sha256:abc123..."))
+{
+    foreach (ManifestReference manifest in page.Value.Manifests)
+    {
+        Console.WriteLine(manifest.Digest);
+    }
+}
+```
+
+For manual pagination, call `GetAsync`, inspect `NextPageLink`, and pass a
+non-null link to `GetNextAsync`:
+
+```csharp
+Page<OciImageIndex> page = await client.Referrers.GetAsync(
+    "myrepo",
+    "sha256:abc123...");
 
 while (true)
 {
-    foreach (var manifest in page.Value.Manifests)
+    foreach (ManifestReference manifest in page.Value.Manifests)
     {
         Console.WriteLine(manifest.Digest);
     }

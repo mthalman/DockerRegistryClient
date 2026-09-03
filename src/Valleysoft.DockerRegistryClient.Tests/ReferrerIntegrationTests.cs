@@ -61,30 +61,33 @@ public sealed class ReferrerIntegrationTests
                 }
             });
 
-        Page<Models.Manifests.Oci.OciImageIndex> all = await client.Referrers.GetAsync(
-            repository,
-            subject.Digest);
+        List<Models.Manifests.Oci.ManifestReference> all = [];
+        await foreach (Models.Manifests.Oci.ManifestReference manifestReference in
+            client.Referrers.GetAllAsync(repository, subject.Digest))
+        {
+            all.Add(manifestReference);
+        }
 
-        Assert.Null(all.NextPageLink);
-        Assert.Equal(2, all.Value.Manifests.Length);
-        Assert.Contains(all.Value.Manifests, descriptor =>
+        Assert.Equal(2, all.Count);
+        Assert.Contains(all, descriptor =>
             descriptor.Digest == sbom.Digest &&
             descriptor.ArtifactType == SbomType &&
             descriptor.Annotations["name"] == "sbom");
-        Assert.Contains(all.Value.Manifests, descriptor =>
+        Assert.Contains(all, descriptor =>
             descriptor.Digest == signature.Digest &&
             descriptor.ArtifactType == SignatureType &&
             descriptor.Annotations["name"] == "signature");
 
-        Page<Models.Manifests.Oci.OciImageIndex> filtered = await client.Referrers.GetAsync(
-            repository,
-            subject.Digest,
-            SbomType);
+        List<Models.Manifests.Oci.ManifestReference> filtered = [];
+        await foreach (Models.Manifests.Oci.ManifestReference manifestReference in
+            client.Referrers.GetAllAsync(repository, subject.Digest, SbomType))
+        {
+            filtered.Add(manifestReference);
+        }
 
-        Models.Manifests.Oci.ManifestReference descriptor = Assert.Single(filtered.Value.Manifests);
-        Assert.Equal(sbom.Digest, descriptor.Digest);
-        Assert.Equal(SbomType, descriptor.ArtifactType);
-        Assert.Null(filtered.NextPageLink);
+        Models.Manifests.Oci.ManifestReference filteredDescriptor = Assert.Single(filtered);
+        Assert.Equal(sbom.Digest, filteredDescriptor.Digest);
+        Assert.Equal(SbomType, filteredDescriptor.ArtifactType);
     }
 
     private static object CreateManifest(BlobSeed config) =>
