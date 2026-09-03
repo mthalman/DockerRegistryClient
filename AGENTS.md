@@ -40,22 +40,31 @@ Paginated results are wrapped in `Page<T>`, which carries a `NextPageLink` for c
 
 ## Pull request labels
 
-After creating a pull request, apply exactly one semantic-version label based on
-the highest-impact change in the pull request:
+Every pull request must have exactly one semantic-version label, selected by the
+highest-impact public change:
 
-- `semver:major` for a breaking change
-- `semver:minor` for a backward-compatible feature
-- `semver:patch` for a backward-compatible fix or maintenance change
+- `semver:major` for breaking public API or behavior
+- `semver:minor` for backward-compatible public functionality
+- `semver:patch` for fixes, documentation, dependencies, tests, build changes,
+  or maintenance
 
-Also apply the release-note category that best describes the change:
+Apply at most one canonical visible category:
 
 - `enhancement` for features
 - `bug` for fixes
 - `documentation` for documentation-only changes
 - `dependencies` for dependency updates
-- No category label for maintenance, refactoring, test, or infrastructure changes
+- No category for maintenance, refactoring, tests, or infrastructure
 
-Apply `skip-changelog` only when the pull request is intentionally excluded from
-the public release notes. Before considering pull request creation complete,
-verify that the pull request has the intended semantic-version and category
-labels.
+For mixed pull requests, classify by the highest-impact public change. A
+test-heavy pull request that fixes a product bug is `bug`; a dependency pull
+request spanning production and tooling dependencies remains `dependencies`.
+
+Apply `skip-changelog` to internal-only test dependency updates, CI action
+updates, build or tooling changes, and repository administration that are not
+useful to package users. Do not apply it to production dependency updates,
+user-facing fixes, features, or documentation, or significant release behavior
+that users or maintainers should know about.
+
+After creating a pull request, apply the labels on GitHub and verify them before
+considering pull request creation complete.
