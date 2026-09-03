@@ -1,4 +1,5 @@
 ﻿using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using Valleysoft.DockerRegistryClient.Models.Manifests;
 using Valleysoft.DockerRegistryClient.Models.Manifests.Docker;
@@ -24,10 +25,20 @@ internal class ManifestOperations : IManifestOperations
 
         return await OperationsHelper.HandleNotFoundErrorAsync(
             NotFoundMessage,
-            () => this.Client.SendRequestAsync(
-                request,
-                GetResult,
-                cancellationToken)).ConfigureAwait(false);
+            async () =>
+            {
+                using HttpResponseMessage response = await this.Client.SendRequestCoreAsync(
+                    request,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+
+#if NET5_0_OR_GREATER
+                byte[] content = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+#else
+                byte[] content = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+#endif
+
+                return GetResult(response, content);
+            }).ConfigureAwait(false);
     }
 
     public async Task<bool> ExistsAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default)
@@ -68,13 +79,14 @@ internal class ManifestOperations : IManifestOperations
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.DockerManifestList));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.OciManifestSchema1));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ManifestMediaTypes.OciImageIndex1));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*", quality: 0.1));
         return request;
     }
 
     private static string GetDigest(HttpResponseMessage response) =>
         response.Headers.GetValues(DockerContentDigestHeader).First();
 
-    private static ManifestInfo GetResult(HttpResponseMessage response, string content)
+    private static ManifestInfo GetResult(HttpResponseMessage response, byte[] content)
     {
         if (response.Content is null)
         {
@@ -84,25 +96,49 @@ internal class ManifestOperations : IManifestOperations
         string? mediaType = response.Content.Headers.ContentType?.MediaType;
         string dockerContentDigest = GetDigest(response);
 
-        return mediaType switch
+        if (mediaType is null)
         {
-            ManifestMediaTypes.DockerManifestSchema2 => new ManifestInfo(
-                mediaType,
-                dockerContentDigest,
-                JsonSerializer.Deserialize<DockerManifest>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
-            ManifestMediaTypes.DockerManifestList => new ManifestInfo(
-                mediaType,
-                dockerContentDigest,
-                JsonSerializer.Deserialize<ManifestList>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
-            ManifestMediaTypes.OciManifestSchema1 => new ManifestInfo(
-                mediaType,
-                dockerContentDigest,
-                JsonSerializer.Deserialize<OciImageManifest>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
-            ManifestMediaTypes.OciImageIndex1 => new ManifestInfo(
-                mediaType,
-                dockerContentDigest,
-                JsonSerializer.Deserialize<OciImageIndex>(content) ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}")),
-            _ => throw new NotSupportedException($"Content type '{mediaType}' not supported."),
-        };
+            throw new InvalidOperationException("Response content type is not set.");
+        }
+
+        IManifest manifest;
+        if (mediaType.Equals(ManifestMediaTypes.DockerManifestSchema2, StringComparison.OrdinalIgnoreCase))
+        {
+            manifest = Deserialize<DockerManifest>(content);
+        }
+        else if (mediaType.Equals(ManifestMediaTypes.DockerManifestList, StringComparison.OrdinalIgnoreCase))
+        {
+            manifest = Deserialize<ManifestList>(content);
+        }
+        else if (mediaType.Equals(ManifestMediaTypes.OciManifestSchema1, StringComparison.OrdinalIgnoreCase))
+        {
+            manifest = Deserialize<OciImageManifest>(content);
+        }
+        else if (mediaType.Equals(ManifestMediaTypes.OciImageIndex1, StringComparison.OrdinalIgnoreCase))
+        {
+            manifest = Deserialize<OciImageIndex>(content);
+        }
+        else
+        {
+            manifest = new RawManifest(mediaType, content);
+        }
+
+        return new ManifestInfo(mediaType, dockerContentDigest, manifest, content);
+    }
+
+    private static T Deserialize<T>(byte[] content)
+        where T : IManifest
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<T>(content) ??
+                throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{Encoding.UTF8.GetString(content)}");
+        }
+        catch (JsonException exception)
+        {
+            throw new JsonException(
+                $"Unable to deserialize the response:{Environment.NewLine}{Encoding.UTF8.GetString(content)}",
+                exception);
+        }
     }
 }
