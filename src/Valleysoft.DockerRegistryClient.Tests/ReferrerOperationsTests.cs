@@ -42,7 +42,7 @@ public sealed class ReferrerOperationsTests
     }
 
     [Fact]
-    public async Task GetAsync_WithFilter_AndGetNextAsync_ReturnDescriptorPages()
+    public async Task GetAllPagesAsync_WithFilter_ReturnsDescriptorPages()
     {
         const string ArtifactType = "application/spdx+json";
         var handler = new MockHttpMessageHandler();
@@ -62,10 +62,17 @@ public sealed class ReferrerOperationsTests
                 """{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:second","size":202,"artifactType":"application/spdx+json","annotations":{"name":"second"}}]}"""));
         using var client = new RegistryClient("registry.example", null, new HttpClient(handler));
 
-        Page<OciImageIndex> firstPage = await client.Referrers.GetAsync(
+        List<Page<OciImageIndex>> pages = [];
+        await foreach (Page<OciImageIndex> page in client.Referrers.GetAllPagesAsync(
             "repository",
             "sha256:subject",
-            ArtifactType);
+            ArtifactType))
+        {
+            pages.Add(page);
+        }
+
+        Assert.Equal(2, pages.Count);
+        Page<OciImageIndex> firstPage = pages[0];
         ManifestReference first = Assert.Single(firstPage.Value.Manifests);
         Assert.Equal("sha256:first", first.Digest);
         Assert.Equal(101, first.Size);
@@ -74,7 +81,7 @@ public sealed class ReferrerOperationsTests
         Assert.Equal("one", firstPage.Value.Annotations["page"]);
         Assert.NotNull(firstPage.NextPageLink);
 
-        Page<OciImageIndex> secondPage = await client.Referrers.GetNextAsync(firstPage.NextPageLink);
+        Page<OciImageIndex> secondPage = pages[1];
         ManifestReference second = Assert.Single(secondPage.Value.Manifests);
         Assert.Equal("sha256:second", second.Digest);
         Assert.Equal(202, second.Size);

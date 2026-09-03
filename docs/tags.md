@@ -21,14 +21,44 @@ Pass a `count` parameter to limit the number of tags returned per page:
 Page<RepositoryTags> tagsPage = await client.Tags.GetAsync("dotnet/sdk", count: 10);
 ```
 
-## Retrieve every page
+## Stream every tag
 
-Results are returned as `Page<RepositoryTags>`. When more results are available, `NextPageLink` is non-null. Use `GetNextAsync` to retrieve subsequent pages:
+Use `GetAllAsync` to stream tags across every page:
 
 ```csharp
 using RegistryClient client = new("mcr.microsoft.com");
 
-Page<RepositoryTags> page = await client.Tags.GetAsync("dotnet/sdk", count: 100);
+await foreach (string tag in client.Tags.GetAllAsync("dotnet/sdk", count: 100))
+{
+    Console.WriteLine(tag);
+}
+```
+
+The client requests each page only as the loop advances. Pass a
+`CancellationToken` to stop enumeration and any active request.
+
+## Process complete pages
+
+Use `GetAllPagesAsync` when page boundaries or page metadata are needed:
+
+```csharp
+await foreach (Page<RepositoryTags> page in
+    client.Tags.GetAllPagesAsync("dotnet/sdk", count: 100))
+{
+    foreach (string tag in page.Value.Tags)
+    {
+        Console.WriteLine(tag);
+    }
+}
+```
+
+For manual pagination, call `GetAsync`, inspect `NextPageLink`, and pass a
+non-null link to `GetNextAsync`:
+
+```csharp
+Page<RepositoryTags> page = await client.Tags.GetAsync(
+    "dotnet/sdk",
+    count: 100);
 
 while (true)
 {
@@ -46,4 +76,5 @@ while (true)
 }
 ```
 
-The `Page<T>` pagination pattern is shared across [Catalog](catalog.md) and [Referrers](referrers.md) operations.
+The `Page<T>` pagination pattern is shared
+across [Catalog](catalog.md) and [Referrers](referrers.md) operations.

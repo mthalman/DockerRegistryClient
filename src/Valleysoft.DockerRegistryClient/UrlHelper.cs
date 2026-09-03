@@ -15,6 +15,9 @@ internal static class UrlHelper
         return resolvedUri;
     }
 
+    public static Uri ResolveSameOrigin(Uri origin, Uri requestUri, string location) =>
+        ResolveSameOrigin(origin, new Uri(requestUri, location).AbsoluteUri);
+
     public static string ApplyCount(string url, int? count)
     {
         if (count is not null)

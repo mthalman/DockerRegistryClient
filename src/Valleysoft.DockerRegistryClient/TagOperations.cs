@@ -19,15 +19,36 @@ internal class TagOperations : ITagOperations
 
     public async Task<Page<RepositoryTags>> GetNextAsync(string nextPageLink, CancellationToken cancellationToken = default)
     {
+        Uri requestUri = UrlHelper.ResolveSameOrigin(this.Client.BaseUri, nextPageLink);
         using HttpRequestMessage request = new(
             HttpMethod.Get,
-            new Uri(UrlHelper.Concat(this.Client.BaseUri.AbsoluteUri, nextPageLink)));
+            requestUri);
+        RedirectDelegatingHandler.RequireSameOrigin(request, this.Client.BaseUri);
 
         return await OperationsHelper.HandleNotFoundErrorAsync(
            "Repository not found.",
            () => this.Client.SendRequestAsync(
                request,
-               RegistryClient.GetPageResult<RepositoryTags>,
+               (response, content) => GetPageResult(response, content, requestUri),
                cancellationToken)).ConfigureAwait(false);
+    }
+
+    private Page<RepositoryTags> GetPageResult(
+        HttpResponseMessage response,
+        string content,
+        Uri requestUri)
+    {
+        Page<RepositoryTags> page =
+            RegistryClient.GetPageResult<RepositoryTags>(response, content);
+        if (page.NextPageLink is null)
+        {
+            return page;
+        }
+
+        Uri nextPageUri = UrlHelper.ResolveSameOrigin(
+            this.Client.BaseUri,
+            response.RequestMessage?.RequestUri ?? requestUri,
+            page.NextPageLink);
+        return new Page<RepositoryTags>(page.Value, nextPageUri.AbsoluteUri);
     }
 }

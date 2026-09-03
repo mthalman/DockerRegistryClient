@@ -126,7 +126,7 @@ internal class ReferrerOperations : IReferrerOperations
 
     private Uri ResolveRegistryUri(Uri baseUri, string uriReference)
     {
-        return UrlHelper.ResolveSameOrigin(Client.BaseUri, new Uri(baseUri, uriReference).AbsoluteUri);
+        return UrlHelper.ResolveSameOrigin(Client.BaseUri, baseUri, uriReference);
     }
 
     private static string AppendQueryParameter(string url, string name, string value)

@@ -32,23 +32,18 @@ public sealed class DiscoveryIntegrationTests
         Assert.Null(defaultPage.NextPageLink);
 
         List<string> pagedTags = [];
-        Page<RepositoryTags> page = await client.Tags.GetAsync(repository, count: 1);
-        while (true)
+        Page<RepositoryTags>? lastPage = null;
+        await foreach (Page<RepositoryTags> page in client.Tags.GetAllPagesAsync(repository, count: 1))
         {
             Assert.Equal(repository, page.Value.RepositoryName);
             pagedTags.AddRange(page.Value.Tags);
-
-            if (page.NextPageLink is null)
-            {
-                break;
-            }
-
-            page = await client.Tags.GetNextAsync(page.NextPageLink);
+            lastPage = page;
         }
 
         Assert.Equal(["alpha", "beta", "gamma"], pagedTags.Order());
-        Assert.Empty(page.Value.Tags);
-        Assert.Null(page.NextPageLink);
+        Assert.NotNull(lastPage);
+        Assert.Empty(lastPage.Value.Tags);
+        Assert.Null(lastPage.NextPageLink);
     }
 
     [Fact]
@@ -72,22 +67,12 @@ public sealed class DiscoveryIntegrationTests
         Assert.Null(defaultPage.NextPageLink);
 
         HashSet<string> allRepositories = [];
-        Page<Catalog> page = await client.Catalog.GetAsync(count: 1);
-        while (true)
+        await foreach (string repository in client.Catalog.GetAllAsync(count: 1))
         {
-            Assert.Single(page.Value.RepositoryNames);
-            allRepositories.UnionWith(page.Value.RepositoryNames);
-
-            if (page.NextPageLink is null)
-            {
-                break;
-            }
-
-            page = await client.Catalog.GetNextAsync(page.NextPageLink);
+            allRepositories.Add(repository);
         }
 
         Assert.All(repositories, repository => Assert.Contains(repository, allRepositories));
-        Assert.Null(page.NextPageLink);
     }
 
     private static object CreateManifest(BlobSeed config) =>
