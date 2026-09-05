@@ -1,4 +1,5 @@
-﻿using System.Net.Http.Headers;
+﻿using System.Net;
+using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
 
 namespace Valleysoft.DockerRegistryClient;
@@ -26,11 +27,50 @@ internal class BlobOperations : IBlobOperations
         using HttpRequestMessage request = new(HttpMethod.Get, $"{this.Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/{digest}");
         HttpResponseMessage response = await this.Client.SendRequestCoreAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        HttpOperationResponse<Stream> streamContentResponse = await OperationsHelper.HandleNotFoundErrorAsync(
+        BlobStream streamContentResponse = await OperationsHelper.HandleNotFoundErrorAsync(
             "Blob not found.",
-            () => RegistryClient.GetStreamContentAsync(request, response)).ConfigureAwait(false);
+            () => CreateBlobStreamAsync(response)).ConfigureAwait(false);
 
-        return new BlobStream(streamContentResponse);
+        return streamContentResponse;
+    }
+
+    /// <summary>
+    /// Returns a range of bytes from the specified blob.
+    /// </summary>
+    /// <param name="repositoryName">Name of the repository the blob belongs to.</param>
+    /// <param name="digest">Digest of the blob (e.g. "sha256:&lt;value&gt;").</param>
+    /// <param name="offset">Zero-based starting offset of the requested range.</param>
+    /// <param name="length">Number of bytes to request, or <see langword="null"/> to request all remaining bytes.</param>
+    /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
+    public async Task<BlobDownloadResult> GetRangeAsync(
+        string repositoryName,
+        string digest,
+        long offset,
+        long? length = null,
+        CancellationToken cancellationToken = default)
+    {
+        long? requestedEnd = ValidateRange(offset, length);
+        using HttpRequestMessage request = CreateDownloadRequest(repositoryName, digest);
+        request.Headers.Range = new RangeHeaderValue(offset, requestedEnd);
+
+        HttpResponseMessage? response = null;
+        try
+        {
+            response = await this.Client.SendRequestCoreAsync(
+                request,
+                cancellationToken: cancellationToken,
+                completionOption: HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+
+            (bool isRangeHonored, long? rangeStart, long? rangeEnd, long? totalLength) =
+                GetDownloadMetadata(response, offset, requestedEnd);
+            BlobStream stream = await CreateBlobStreamAsync(response).ConfigureAwait(false);
+            return new BlobDownloadResult(stream, isRangeHonored, rangeStart, rangeEnd, totalLength);
+        }
+        catch
+        {
+            response?.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -203,61 +243,176 @@ internal class BlobOperations : IBlobOperations
         return long.Parse(match.Groups["offset"].Value);
     }
 
-    private class BlobStream : Stream
+    private HttpRequestMessage CreateDownloadRequest(string repositoryName, string digest)
     {
-        private readonly HttpOperationResponse<Stream> response;
+        HttpRequestMessage request = new(
+            HttpMethod.Get,
+            $"{this.Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/{digest}");
+        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("identity"));
+        return request;
+    }
 
-        internal BlobStream(HttpOperationResponse<Stream> response)
+    private static long? ValidateRange(long offset, long? length)
+    {
+        if (offset < 0)
         {
-            this.response = response;
+            throw new ArgumentOutOfRangeException(nameof(offset), offset, "The range offset cannot be negative.");
         }
 
-        public override bool CanRead => this.response.Body.CanRead;
+        if (length is null)
+        {
+            return null;
+        }
 
-        public override bool CanSeek => this.response.Body.CanSeek;
+        if (length <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), length, "The range length must be positive.");
+        }
 
-        public override bool CanWrite => this.response.Body.CanWrite;
+        try
+        {
+            return checked(offset + (length.Value - 1));
+        }
+        catch (OverflowException)
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), length, "The requested range exceeds the maximum supported offset.");
+        }
+    }
 
-        public override bool CanTimeout => this.response.Body.CanTimeout;
+    private static (bool IsRangeHonored, long? RangeStart, long? RangeEnd, long? TotalLength) GetDownloadMetadata(
+        HttpResponseMessage response,
+        long requestedStart,
+        long? requestedEnd)
+    {
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            long? fullContentLength = response.Content.Headers.ContentLength;
+            return (
+                false,
+                fullContentLength > 0 ? 0 : null,
+                fullContentLength > 0 ? fullContentLength - 1 : null,
+                fullContentLength);
+        }
+
+        if (response.StatusCode != HttpStatusCode.PartialContent)
+        {
+            throw new InvalidOperationException(
+                $"Expected a 200 OK or 206 Partial Content response for a ranged blob download, but received {(int)response.StatusCode} {response.StatusCode}.");
+        }
+
+        ContentRangeHeaderValue? contentRange = response.Content.Headers.ContentRange;
+        if (contentRange is null ||
+            !string.Equals(contentRange.Unit, "bytes", StringComparison.OrdinalIgnoreCase) ||
+            !contentRange.HasRange ||
+            contentRange.From is null ||
+            contentRange.To is null)
+        {
+            throw new InvalidOperationException("The 206 Partial Content response did not contain a valid byte Content-Range header.");
+        }
+
+        long rangeStart = contentRange.From.Value;
+        long rangeEnd = contentRange.To.Value;
+        long? totalLength = contentRange.HasLength ? contentRange.Length : null;
+
+        if (rangeStart < requestedStart ||
+            rangeEnd < rangeStart ||
+            (requestedEnd is not null && rangeEnd > requestedEnd) ||
+            (totalLength is not null && (totalLength <= rangeEnd || requestedStart >= totalLength)))
+        {
+            throw new InvalidOperationException(
+                $"The returned Content-Range '{contentRange}' is inconsistent with the requested byte range.");
+        }
+
+        long returnedLength;
+        try
+        {
+            returnedLength = checked(rangeEnd - rangeStart + 1);
+        }
+        catch (OverflowException exception)
+        {
+            throw new InvalidOperationException($"The returned Content-Range '{contentRange}' is too large.", exception);
+        }
+
+        if (response.Content.Headers.ContentLength is long contentLength && contentLength != returnedLength)
+        {
+            throw new InvalidOperationException(
+                $"The returned Content-Range '{contentRange}' does not match the Content-Length value '{contentLength}'.");
+        }
+
+        return (true, rangeStart, rangeEnd, totalLength);
+    }
+
+    private static async Task<BlobStream> CreateBlobStreamAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            Stream content = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            return new BlobStream(response, content);
+        }
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
+    }
+
+    private class BlobStream : Stream
+    {
+        private readonly HttpResponseMessage response;
+        private readonly Stream content;
+
+        internal BlobStream(HttpResponseMessage response, Stream content)
+        {
+            this.response = response;
+            this.content = content;
+        }
+
+        public override bool CanRead => this.content.CanRead;
+
+        public override bool CanSeek => this.content.CanSeek;
+
+        public override bool CanWrite => this.content.CanWrite;
+
+        public override bool CanTimeout => this.content.CanTimeout;
 
         public override int ReadTimeout
         {
-            get => this.response.Body.ReadTimeout;
-            set => this.response.Body.ReadTimeout = value;
+            get => this.content.ReadTimeout;
+            set => this.content.ReadTimeout = value;
         }
 
         public override int WriteTimeout
         {
-            get => this.response.Body.WriteTimeout;
-            set => this.response.Body.WriteTimeout = value;
+            get => this.content.WriteTimeout;
+            set => this.content.WriteTimeout = value;
         }
 
-        public override long Length => this.response.Body.Length;
+        public override long Length => this.content.Length;
 
         public override long Position
         {
-            get => this.response.Body.Position;
-            set => this.response.Body.Position = value;
+            get => this.content.Position;
+            set => this.content.Position = value;
         }
 
-        public override void Flush() => this.response.Body.Flush();
+        public override void Flush() => this.content.Flush();
 
-        public override int Read(byte[] buffer, int offset, int count) => this.response.Body.Read(buffer, offset, count);
+        public override int Read(byte[] buffer, int offset, int count) => this.content.Read(buffer, offset, count);
 
-        public override long Seek(long offset, SeekOrigin origin) => this.response.Body.Seek(offset, origin);
+        public override long Seek(long offset, SeekOrigin origin) => this.content.Seek(offset, origin);
 
-        public override void SetLength(long value) => this.response.Body.SetLength(value);
+        public override void SetLength(long value) => this.content.SetLength(value);
 
-        public override void Write(byte[] buffer, int offset, int count) => this.response.Body.Write(buffer, offset, count);
+        public override void Write(byte[] buffer, int offset, int count) => this.content.Write(buffer, offset, count);
 
         public override IAsyncResult BeginRead(byte[] buffer, int offset, int count, AsyncCallback? callback, object? state) =>
-            this.response.Body.BeginRead(buffer, offset, count, callback, state);
+            this.content.BeginRead(buffer, offset, count, callback, state);
 
         public override IAsyncResult BeginWrite(byte[] buffer, int offset, int count, AsyncCallback? callback, object? state) =>
-            this.response.Body.BeginWrite(buffer, offset, count, callback, state);
+            this.content.BeginWrite(buffer, offset, count, callback, state);
 
         public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken) =>
-            this.response.Body.CopyToAsync(destination, bufferSize, cancellationToken);
+            this.content.CopyToAsync(destination, bufferSize, cancellationToken);
 
         protected override void Dispose(bool disposing)
         {
@@ -270,32 +425,32 @@ internal class BlobOperations : IBlobOperations
         }
 
         public override int EndRead(IAsyncResult asyncResult) =>
-            this.response.Body.EndRead(asyncResult);
+            this.content.EndRead(asyncResult);
 
         public override void EndWrite(IAsyncResult asyncResult) =>
-            this.response.Body.EndWrite(asyncResult);
+            this.content.EndWrite(asyncResult);
 
         public override Task FlushAsync(CancellationToken cancellationToken) =>
-            this.response.Body.FlushAsync(cancellationToken);
+            this.content.FlushAsync(cancellationToken);
 
         public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-            this.response.Body.ReadAsync(buffer, offset, count, cancellationToken);
+            this.content.ReadAsync(buffer, offset, count, cancellationToken);
 
         public override int ReadByte() =>
-            this.response.Body.ReadByte();
+            this.content.ReadByte();
 
         public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-            this.response.Body.WriteAsync(buffer, offset, count, cancellationToken);
+            this.content.WriteAsync(buffer, offset, count, cancellationToken);
 
         public override void WriteByte(byte value) =>
-            this.response.Body.WriteByte(value);
+            this.content.WriteByte(value);
 
 #if NET6_0_OR_GREATER
         public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
-            this.response.Body.ReadAsync(buffer, cancellationToken);
+            this.content.ReadAsync(buffer, cancellationToken);
 
         public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default) =>
-            this.response.Body.WriteAsync(buffer, cancellationToken);
+            this.content.WriteAsync(buffer, cancellationToken);
 #endif
     }
 

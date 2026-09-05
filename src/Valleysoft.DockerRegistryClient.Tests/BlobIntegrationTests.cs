@@ -40,6 +40,23 @@ public sealed class BlobIntegrationTests
             Assert.Equal(content, downloadedContent.ToArray());
         }
 
+        BlobDownloadResult boundedDownload = await client.Blobs.GetRangeAsync(repository, digest, 5, 8);
+        await using (boundedDownload.Content)
+        {
+            Assert.True(boundedDownload.IsRangeHonored);
+            Assert.Equal(5, boundedDownload.RangeStart);
+            Assert.Equal(12, boundedDownload.RangeEnd);
+            Assert.Equal(content.Length, boundedDownload.TotalLength);
+            Assert.Equal(content.Skip(5).Take(8), await ReadAllBytesAsync(boundedDownload.Content));
+        }
+
+        BlobDownloadResult resumedDownload = await client.Blobs.GetRangeAsync(repository, digest, 5);
+        await using (resumedDownload.Content)
+        {
+            Assert.True(resumedDownload.IsRangeHonored);
+            Assert.Equal(content.Skip(5), await ReadAllBytesAsync(resumedDownload.Content));
+        }
+
         await client.Blobs.DeleteAsync(repository, digest);
         Assert.False(await client.Blobs.ExistsAsync(repository, digest));
 
@@ -128,5 +145,12 @@ public sealed class BlobIntegrationTests
         using RegistryClient authenticatedClient = fixture.CreateClient();
         Page<Models.Catalog> catalog = await authenticatedClient.Catalog.GetAsync();
         Assert.NotNull(catalog.Value.RepositoryNames);
+    }
+
+    private static async Task<byte[]> ReadAllBytesAsync(Stream stream)
+    {
+        using MemoryStream destination = new();
+        await stream.CopyToAsync(destination);
+        return destination.ToArray();
     }
 }

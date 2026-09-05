@@ -131,6 +131,29 @@ public class RegistryClientTests
     }
 
     [Fact]
+    public async Task SendRequestCoreAsync_Error_DoesNotReadRequestContent()
+    {
+        var mockHandler = new MockHttpMessageHandler();
+        var response = new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("")
+        };
+        mockHandler.AddExpectedRequest(HttpMethod.Post, "https://myregistry.io/v2/", response);
+
+        var httpClient = new HttpClient(mockHandler);
+        var client = new RegistryClient("myregistry.io", null, httpClient);
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://myregistry.io/v2/")
+        {
+            Content = new ThrowOnReadContent()
+        };
+
+        RegistryException exception = await Assert.ThrowsAsync<RegistryException>(
+            () => client.SendRequestCoreAsync(request));
+
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+    }
+
+    [Fact]
     public async Task SendRequestCoreAsync_ErrorWithXmlBodySingleError_ThrowsRegistryException()
     {
         var mockHandler = new MockHttpMessageHandler();
@@ -391,5 +414,17 @@ public class RegistryClientTests
         
         var request = new HttpRequestMessage(HttpMethod.Get, "https://myregistry.io/v2/test");
         await Assert.ThrowsAsync<JsonException>(() => client.SendRequestAsync<Catalog>(request));
+    }
+
+    private sealed class ThrowOnReadContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            throw new InvalidOperationException("Request content should not be read.");
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
     }
 }

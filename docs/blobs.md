@@ -39,6 +39,80 @@ using FileStream file = File.Create("layer.tar.gz");
 await blobStream.CopyToAsync(file);
 ```
 
+## Download part of a blob
+
+Use `GetRangeAsync` to download a bounded byte range. `offset` is zero-based,
+and `length` must be positive:
+
+```csharp
+BlobDownloadResult download = await client.Blobs.GetRangeAsync(
+    "dotnet/sdk",
+    "sha256:abc123...",
+    offset: 1024,
+    length: 4096);
+
+using Stream content = download.Content;
+if (!download.IsRangeHonored)
+{
+    // The registry returned the complete blob. Choose whether to use or discard it.
+    throw new InvalidOperationException("The registry did not honor the requested range.");
+}
+
+using FileStream file = File.Create("layer-part.bin");
+await content.CopyToAsync(file);
+
+Console.WriteLine($"Received bytes {download.RangeStart}-{download.RangeEnd}");
+Console.WriteLine($"Reported blob length: {download.TotalLength}");
+```
+
+`RangeStart` and `RangeEnd` are inclusive and describe the bytes that the
+registry returned. A registry can return only part of the requested range, so
+do not assume that the response starts at `offset` or contains `length` bytes.
+`TotalLength` is `null` when the registry does not report the complete blob
+length.
+
+A registry can also ignore a range request and return `200 OK`. In that case,
+`IsRangeHonored` is `false`, and `Content` contains the complete response body.
+An unsatisfiable range throws a `RegistryException` with `StatusCode` set to
+`HttpStatusCode.RequestedRangeNotSatisfiable`.
+
+Omit `length` to request bytes from an offset through the end of the blob. To
+resume a download safely, confirm that the returned range starts at the current
+file length before appending the response:
+
+```csharp
+const string destination = "layer.tar.gz";
+long offset = File.Exists(destination) ? new FileInfo(destination).Length : 0;
+
+BlobDownloadResult download = await client.Blobs.GetRangeAsync(
+    "dotnet/sdk",
+    "sha256:abc123...",
+    offset);
+
+using Stream content = download.Content;
+if (!download.IsRangeHonored || download.RangeStart != offset)
+{
+    throw new InvalidOperationException(
+        "The registry did not return data from the requested resume offset.");
+}
+
+using FileStream file = new(
+    destination,
+    FileMode.Append,
+    FileAccess.Write,
+    FileShare.None);
+await content.CopyToAsync(file);
+```
+
+If `TotalLength` is available and the file is shorter than that value after the
+copy, repeat the request with the new file length as `offset`. If
+`TotalLength` is unavailable, use an expected length from another trusted
+source to determine whether the download is complete.
+
+The client does not persist checkpoints, retry interrupted downloads, or
+verify assembled content. After a resumed download completes, verify the
+digest of the entire file against the requested digest before using it.
+
 ## Read an image configuration
 
 `GetImageAsync` downloads and deserializes a blob that contains a Docker or OCI
