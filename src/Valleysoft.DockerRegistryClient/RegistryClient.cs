@@ -137,16 +137,6 @@ public class RegistryClient : IDisposable
                     throw new InvalidOperationException($"Response content is null.");
                 }
 
-                string? requestContent = null;
-                if (request.Content is not null)
-                {
-#if NET5_0_OR_GREATER
-                    requestContent = await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-#else
-                    requestContent = await request.Content.ReadAsStringAsync().ConfigureAwait(false);
-#endif
-                }
-
 #if NET5_0_OR_GREATER
                 string errorContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #else
