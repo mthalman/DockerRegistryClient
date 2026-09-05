@@ -186,7 +186,7 @@ internal class ReferrerOperations : IReferrerOperations
         return new Page<OciImageIndex>(index, nextPageLink: null);
     }
 
-    private static string GetFallbackTag(string digest)
+    internal static string GetFallbackTag(string digest)
     {
         int separatorIndex = digest.IndexOf(':');
         if (separatorIndex < 1 || separatorIndex == digest.Length - 1)

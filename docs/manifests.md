@@ -20,6 +20,70 @@ await File.WriteAllBytesAsync("manifest.json", info.Content.ToArray());
 such as copying a manifest without reserializing it. Manifest content is buffered
 in memory and does not require disposal.
 
+## Publish a manifest
+
+Publish a Docker or OCI model under a tag or digest reference:
+
+```csharp
+var manifest = new OciImageManifest
+{
+    Config = new OciDescriptor
+    {
+        MediaType = "application/vnd.oci.image.config.v1+json",
+        Digest = configDigest,
+        Size = configSize
+    },
+    Layers = []
+};
+
+ManifestPublishResult result =
+    await client.Manifests.PublishAsync("example/image", "latest", manifest);
+
+Console.WriteLine($"Digest: {result.Digest}");
+Console.WriteLine($"Location: {result.Location}");
+```
+
+The model's `MediaType` is sent as the request content type. `Location` contains
+the registry's `Location` response header. `Digest` contains the
+`Docker-Content-Digest` response header when the registry provides it; otherwise,
+it is `null`.
+
+Use the byte-oriented overload when copying a retrieved manifest or when its
+exact representation matters:
+
+```csharp
+ManifestInfo source = await sourceClient.Manifests.GetAsync("example/image", "latest");
+
+ManifestPublishResult copied = await destinationClient.Manifests.PublishAsync(
+    "example/image",
+    "copied",
+    source.Content,
+    source.MediaType);
+```
+
+This overload sends the provided bytes unchanged and supports vendor-specific
+manifest formats. Publishing a `RawManifest` through the model overload also
+preserves its original bytes.
+
+When an OCI manifest or index includes a `subject`, publishing maintains the
+referrers tag-schema fallback if the registry does not acknowledge native
+referrers support with an `OCI-Subject` response header. Deleting a
+subject-bearing manifest also removes it from that fallback index when the
+native referrers API is unavailable.
+
+The built-in manifest operations implement `IManifestWriteOperations`. Custom
+`IManifestOperations` implementations must also implement that capability
+interface to support the publishing and deletion extension methods.
+
+## Delete a manifest
+
+Resolve a tag to its canonical digest and delete the manifest by digest:
+
+```csharp
+string digest = await client.Manifests.GetDigestAsync("example/image", "latest");
+await client.Manifests.DeleteAsync("example/image", digest);
+```
+
 ## Check whether a manifest exists
 
 ```csharp

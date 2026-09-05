@@ -38,7 +38,7 @@ All operation methods accept an optional `CancellationToken`.
 | Property | Operations | Docs |
 | --- | --- | --- |
 | `client.Tags` | List tags | [Tags](docs/tags.md) |
-| `client.Manifests` | Get, check existence, get digest | [Manifests](docs/manifests.md) |
+| `client.Manifests` | Get, publish, delete, check existence, get digest | [Manifests](docs/manifests.md) |
 | `client.Blobs` | Download, deserialize image configuration, upload, check existence, delete | [Blobs](docs/blobs.md) |
 | `client.Catalog` | List repositories | [Catalog](docs/catalog.md) |
 | `client.Referrers` | Get referrers by digest, filter by artifact type | [Referrers](docs/referrers.md) |
