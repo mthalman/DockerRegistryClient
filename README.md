@@ -48,6 +48,7 @@ All operation methods accept an optional `CancellationToken`.
 - [Authentication](docs/authentication.md) - Configure anonymous, basic, token, or custom credentials
 - [Error handling](docs/error-handling.md) - Handle `RegistryException` and registry error details
 - [Contributing](CONTRIBUTING.md)
+- [Maintainer guide](MAINTAINERS.md) - Review, label, and release changes
 
 ## License
 
