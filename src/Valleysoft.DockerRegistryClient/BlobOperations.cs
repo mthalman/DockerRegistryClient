@@ -27,11 +27,11 @@ internal class BlobOperations : IBlobOperations
         using HttpRequestMessage request = new(HttpMethod.Get, $"{this.Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/{digest}");
         HttpResponseMessage response = await this.Client.SendRequestCoreAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        HttpOperationResponse<Stream> streamContentResponse = await OperationsHelper.HandleNotFoundErrorAsync(
+        BlobStream streamContentResponse = await OperationsHelper.HandleNotFoundErrorAsync(
             "Blob not found.",
-            () => RegistryClient.GetStreamContentAsync(request, response)).ConfigureAwait(false);
+            () => CreateBlobStreamAsync(response)).ConfigureAwait(false);
 
-        return new BlobStream(streamContentResponse);
+        return streamContentResponse;
     }
 
     /// <summary>
@@ -50,7 +50,7 @@ internal class BlobOperations : IBlobOperations
         CancellationToken cancellationToken = default)
     {
         long? requestedEnd = ValidateRange(offset, length);
-        HttpRequestMessage request = CreateDownloadRequest(repositoryName, digest);
+        using HttpRequestMessage request = CreateDownloadRequest(repositoryName, digest);
         request.Headers.Range = new RangeHeaderValue(offset, requestedEnd);
 
         HttpResponseMessage? response = null;
@@ -63,13 +63,12 @@ internal class BlobOperations : IBlobOperations
 
             (bool isRangeHonored, long? rangeStart, long? rangeEnd, long? totalLength) =
                 GetDownloadMetadata(response, offset, requestedEnd);
-            BlobStream stream = await CreateBlobStreamAsync(request, response).ConfigureAwait(false);
+            BlobStream stream = await CreateBlobStreamAsync(response).ConfigureAwait(false);
             return new BlobDownloadResult(stream, isRangeHonored, rangeStart, rangeEnd, totalLength);
         }
         catch
         {
             response?.Dispose();
-            request.Dispose();
             throw;
         }
     }
@@ -343,70 +342,77 @@ internal class BlobOperations : IBlobOperations
         return (true, rangeStart, rangeEnd, totalLength);
     }
 
-    private static async Task<BlobStream> CreateBlobStreamAsync(
-        HttpRequestMessage request,
-        HttpResponseMessage response)
+    private static async Task<BlobStream> CreateBlobStreamAsync(HttpResponseMessage response)
     {
-        HttpOperationResponse<Stream> streamContentResponse =
-            await RegistryClient.GetStreamContentAsync(request, response).ConfigureAwait(false);
-        return new BlobStream(streamContentResponse);
+        try
+        {
+            Stream content = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            return new BlobStream(response, content);
+        }
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
     }
 
     private class BlobStream : Stream
     {
-        private readonly HttpOperationResponse<Stream> response;
+        private readonly HttpResponseMessage response;
+        private readonly Stream content;
 
-        internal BlobStream(HttpOperationResponse<Stream> response)
+        internal BlobStream(HttpResponseMessage response, Stream content)
         {
             this.response = response;
+            this.content = content;
         }
 
-        public override bool CanRead => this.response.Body.CanRead;
+        public override bool CanRead => this.content.CanRead;
 
-        public override bool CanSeek => this.response.Body.CanSeek;
+        public override bool CanSeek => this.content.CanSeek;
 
-        public override bool CanWrite => this.response.Body.CanWrite;
+        public override bool CanWrite => this.content.CanWrite;
 
-        public override bool CanTimeout => this.response.Body.CanTimeout;
+        public override bool CanTimeout => this.content.CanTimeout;
 
         public override int ReadTimeout
         {
-            get => this.response.Body.ReadTimeout;
-            set => this.response.Body.ReadTimeout = value;
+            get => this.content.ReadTimeout;
+            set => this.content.ReadTimeout = value;
         }
 
         public override int WriteTimeout
         {
-            get => this.response.Body.WriteTimeout;
-            set => this.response.Body.WriteTimeout = value;
+            get => this.content.WriteTimeout;
+            set => this.content.WriteTimeout = value;
         }
 
-        public override long Length => this.response.Body.Length;
+        public override long Length => this.content.Length;
 
         public override long Position
         {
-            get => this.response.Body.Position;
-            set => this.response.Body.Position = value;
+            get => this.content.Position;
+            set => this.content.Position = value;
         }
 
-        public override void Flush() => this.response.Body.Flush();
+        public override void Flush() => this.content.Flush();
 
-        public override int Read(byte[] buffer, int offset, int count) => this.response.Body.Read(buffer, offset, count);
+        public override int Read(byte[] buffer, int offset, int count) => this.content.Read(buffer, offset, count);
 
-        public override long Seek(long offset, SeekOrigin origin) => this.response.Body.Seek(offset, origin);
+        public override long Seek(long offset, SeekOrigin origin) => this.content.Seek(offset, origin);
 
-        public override void SetLength(long value) => this.response.Body.SetLength(value);
+        public override void SetLength(long value) => this.content.SetLength(value);
 
-        public override void Write(byte[] buffer, int offset, int count) => this.response.Body.Write(buffer, offset, count);
+        public override void Write(byte[] buffer, int offset, int count) => this.content.Write(buffer, offset, count);
 
         public override IAsyncResult BeginRead(byte[] buffer, int offset, int count, AsyncCallback? callback, object? state) =>
-            this.response.Body.BeginRead(buffer, offset, count, callback, state);
+            this.content.BeginRead(buffer, offset, count, callback, state);
 
         public override IAsyncResult BeginWrite(byte[] buffer, int offset, int count, AsyncCallback? callback, object? state) =>
-            this.response.Body.BeginWrite(buffer, offset, count, callback, state);
+            this.content.BeginWrite(buffer, offset, count, callback, state);
 
         public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken) =>
-            this.response.Body.CopyToAsync(destination, bufferSize, cancellationToken);
+            this.content.CopyToAsync(destination, bufferSize, cancellationToken);
 
         protected override void Dispose(bool disposing)
         {
@@ -419,32 +425,32 @@ internal class BlobOperations : IBlobOperations
         }
 
         public override int EndRead(IAsyncResult asyncResult) =>
-            this.response.Body.EndRead(asyncResult);
+            this.content.EndRead(asyncResult);
 
         public override void EndWrite(IAsyncResult asyncResult) =>
-            this.response.Body.EndWrite(asyncResult);
+            this.content.EndWrite(asyncResult);
 
         public override Task FlushAsync(CancellationToken cancellationToken) =>
-            this.response.Body.FlushAsync(cancellationToken);
+            this.content.FlushAsync(cancellationToken);
 
         public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-            this.response.Body.ReadAsync(buffer, offset, count, cancellationToken);
+            this.content.ReadAsync(buffer, offset, count, cancellationToken);
 
         public override int ReadByte() =>
-            this.response.Body.ReadByte();
+            this.content.ReadByte();
 
         public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-            this.response.Body.WriteAsync(buffer, offset, count, cancellationToken);
+            this.content.WriteAsync(buffer, offset, count, cancellationToken);
 
         public override void WriteByte(byte value) =>
-            this.response.Body.WriteByte(value);
+            this.content.WriteByte(value);
 
 #if NET6_0_OR_GREATER
         public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
-            this.response.Body.ReadAsync(buffer, cancellationToken);
+            this.content.ReadAsync(buffer, cancellationToken);
 
         public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default) =>
-            this.response.Body.WriteAsync(buffer, cancellationToken);
+            this.content.WriteAsync(buffer, cancellationToken);
 #endif
     }
 
