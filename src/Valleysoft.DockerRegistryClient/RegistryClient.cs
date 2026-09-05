@@ -106,7 +106,11 @@ public class RegistryClient : IDisposable
         return response.IsSuccessStatusCode;
     }
 
-    internal async Task<HttpResponseMessage> SendRequestCoreAsync(HttpRequestMessage request, bool ignoreUnsuccessfulResponse = false, CancellationToken cancellationToken = default)
+    internal async Task<HttpResponseMessage> SendRequestCoreAsync(
+        HttpRequestMessage request,
+        bool ignoreUnsuccessfulResponse = false,
+        CancellationToken cancellationToken = default,
+        HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead)
     {
         if (this.credentials is not null && request.Headers.Authorization is null)
         {
@@ -115,7 +119,7 @@ public class RegistryClient : IDisposable
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        HttpResponseMessage response = await this.HttpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        HttpResponseMessage response = await this.HttpClient.SendAsync(request, completionOption, cancellationToken).ConfigureAwait(false);
 
         if (ignoreUnsuccessfulResponse)
         {
@@ -124,37 +128,45 @@ public class RegistryClient : IDisposable
 
         if (!response.IsSuccessStatusCode)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (response.Content is null)
+            try
             {
-                throw new InvalidOperationException($"Response content is null.");
-            }
+                cancellationToken.ThrowIfCancellationRequested();
 
-            string? requestContent = null;
-            if (request.Content is not null)
-            {
+                if (response.Content is null)
+                {
+                    throw new InvalidOperationException($"Response content is null.");
+                }
+
+                string? requestContent = null;
+                if (request.Content is not null)
+                {
 #if NET5_0_OR_GREATER
-                requestContent = await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    requestContent = await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #else
-                requestContent = await request.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    requestContent = await request.Content.ReadAsStringAsync().ConfigureAwait(false);
 #endif
-            }
+                }
 
 #if NET5_0_OR_GREATER
-            string errorContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                string errorContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #else
-            string errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                string errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 #endif
 
-            ErrorResult? errorResult = ParseErrorResult(response, errorContent);
+                ErrorResult? errorResult = ParseErrorResult(response, errorContent);
 
-            throw new RegistryException(
-                $"Response status code does not indicate success: {response.StatusCode}. See {nameof(RegistryException.Errors)} property for more detail. ({response.ReasonPhrase})")
+                throw new RegistryException(
+                    $"Response status code does not indicate success: {response.StatusCode}. See {nameof(RegistryException.Errors)} property for more detail. ({response.ReasonPhrase})")
+                {
+                    Errors = errorResult?.Errors ?? Enumerable.Empty<Error>(),
+                    StatusCode = response.StatusCode
+                };
+            }
+            catch
             {
-                Errors = errorResult?.Errors ?? Enumerable.Empty<Error>(),
-                StatusCode = response.StatusCode
-            };
+                response.Dispose();
+                throw;
+            }
         }
         response.EnsureSuccessStatusCode();
 

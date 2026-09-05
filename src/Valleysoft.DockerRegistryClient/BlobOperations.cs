@@ -1,4 +1,5 @@
-﻿using System.Net.Http.Headers;
+﻿using System.Net;
+using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
 
 namespace Valleysoft.DockerRegistryClient;
@@ -31,6 +32,46 @@ internal class BlobOperations : IBlobOperations
             () => RegistryClient.GetStreamContentAsync(request, response)).ConfigureAwait(false);
 
         return new BlobStream(streamContentResponse);
+    }
+
+    /// <summary>
+    /// Returns a range of bytes from the specified blob.
+    /// </summary>
+    /// <param name="repositoryName">Name of the repository the blob belongs to.</param>
+    /// <param name="digest">Digest of the blob (e.g. "sha256:&lt;value&gt;").</param>
+    /// <param name="offset">Zero-based starting offset of the requested range.</param>
+    /// <param name="length">Number of bytes to request, or <see langword="null"/> to request all remaining bytes.</param>
+    /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
+    public async Task<BlobDownloadResult> GetRangeAsync(
+        string repositoryName,
+        string digest,
+        long offset,
+        long? length = null,
+        CancellationToken cancellationToken = default)
+    {
+        long? requestedEnd = ValidateRange(offset, length);
+        HttpRequestMessage request = CreateDownloadRequest(repositoryName, digest);
+        request.Headers.Range = new RangeHeaderValue(offset, requestedEnd);
+
+        HttpResponseMessage? response = null;
+        try
+        {
+            response = await this.Client.SendRequestCoreAsync(
+                request,
+                cancellationToken: cancellationToken,
+                completionOption: HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+
+            (bool isRangeHonored, long? rangeStart, long? rangeEnd, long? totalLength) =
+                GetDownloadMetadata(response, offset, requestedEnd);
+            BlobStream stream = await CreateBlobStreamAsync(request, response).ConfigureAwait(false);
+            return new BlobDownloadResult(stream, isRangeHonored, rangeStart, rangeEnd, totalLength);
+        }
+        catch
+        {
+            response?.Dispose();
+            request.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -201,6 +242,114 @@ internal class BlobOperations : IBlobOperations
         }
 
         return long.Parse(match.Groups["offset"].Value);
+    }
+
+    private HttpRequestMessage CreateDownloadRequest(string repositoryName, string digest)
+    {
+        HttpRequestMessage request = new(
+            HttpMethod.Get,
+            $"{this.Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/{digest}");
+        request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("identity"));
+        return request;
+    }
+
+    private static long? ValidateRange(long offset, long? length)
+    {
+        if (offset < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(offset), offset, "The range offset cannot be negative.");
+        }
+
+        if (length is null)
+        {
+            return null;
+        }
+
+        if (length <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), length, "The range length must be positive.");
+        }
+
+        try
+        {
+            return checked(offset + (length.Value - 1));
+        }
+        catch (OverflowException)
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), length, "The requested range exceeds the maximum supported offset.");
+        }
+    }
+
+    private static (bool IsRangeHonored, long? RangeStart, long? RangeEnd, long? TotalLength) GetDownloadMetadata(
+        HttpResponseMessage response,
+        long requestedStart,
+        long? requestedEnd)
+    {
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            long? fullContentLength = response.Content.Headers.ContentLength;
+            return (
+                false,
+                fullContentLength > 0 ? 0 : null,
+                fullContentLength > 0 ? fullContentLength - 1 : null,
+                fullContentLength);
+        }
+
+        if (response.StatusCode != HttpStatusCode.PartialContent)
+        {
+            throw new InvalidOperationException(
+                $"Expected a 200 OK or 206 Partial Content response for a ranged blob download, but received {(int)response.StatusCode} {response.StatusCode}.");
+        }
+
+        ContentRangeHeaderValue? contentRange = response.Content.Headers.ContentRange;
+        if (contentRange is null ||
+            !string.Equals(contentRange.Unit, "bytes", StringComparison.OrdinalIgnoreCase) ||
+            !contentRange.HasRange ||
+            contentRange.From is null ||
+            contentRange.To is null)
+        {
+            throw new InvalidOperationException("The 206 Partial Content response did not contain a valid byte Content-Range header.");
+        }
+
+        long rangeStart = contentRange.From.Value;
+        long rangeEnd = contentRange.To.Value;
+        long? totalLength = contentRange.HasLength ? contentRange.Length : null;
+
+        if (rangeStart < requestedStart ||
+            rangeEnd < rangeStart ||
+            (requestedEnd is not null && rangeEnd > requestedEnd) ||
+            (totalLength is not null && (totalLength <= rangeEnd || requestedStart >= totalLength)))
+        {
+            throw new InvalidOperationException(
+                $"The returned Content-Range '{contentRange}' is inconsistent with the requested byte range.");
+        }
+
+        long returnedLength;
+        try
+        {
+            returnedLength = checked(rangeEnd - rangeStart + 1);
+        }
+        catch (OverflowException exception)
+        {
+            throw new InvalidOperationException($"The returned Content-Range '{contentRange}' is too large.", exception);
+        }
+
+        if (response.Content.Headers.ContentLength is long contentLength && contentLength != returnedLength)
+        {
+            throw new InvalidOperationException(
+                $"The returned Content-Range '{contentRange}' does not match the Content-Length value '{contentLength}'.");
+        }
+
+        return (true, rangeStart, rangeEnd, totalLength);
+    }
+
+    private static async Task<BlobStream> CreateBlobStreamAsync(
+        HttpRequestMessage request,
+        HttpResponseMessage response)
+    {
+        HttpOperationResponse<Stream> streamContentResponse =
+            await RegistryClient.GetStreamContentAsync(request, response).ConfigureAwait(false);
+        return new BlobStream(streamContentResponse);
     }
 
     private class BlobStream : Stream

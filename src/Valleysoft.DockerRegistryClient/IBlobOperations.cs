@@ -5,6 +5,9 @@ public interface IBlobOperations
     Task<Stream> GetAsync(
         string repositoryName, string digest, CancellationToken cancellationToken = default);
 
+    Task<BlobDownloadResult> GetRangeAsync(
+        string repositoryName, string digest, long offset, long? length = null, CancellationToken cancellationToken = default);
+
     Task<bool> ExistsAsync(
         string repositoryName, string digest, CancellationToken cancellationToken = default);
 
