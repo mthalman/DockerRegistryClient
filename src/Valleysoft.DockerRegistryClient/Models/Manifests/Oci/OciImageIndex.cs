@@ -10,6 +10,7 @@ public class OciImageIndex : Manifest, IManifestList
     public OciImageIndex()
     {
         MediaType = ManifestMediaTypes.OciImageIndex1;
+        SchemaVersion = 2;
     }
 
     /// <summary>
@@ -23,6 +24,12 @@ public class OciImageIndex : Manifest, IManifestList
     }
 
     IManifestReference[] IManifestList.Manifests => Manifests;
+
+    [JsonPropertyName("artifactType")]
+    public string? ArtifactType { get; set; }
+
+    [JsonPropertyName("subject")]
+    public OciDescriptor? Subject { get; set; }
 
     [JsonPropertyName("annotations")]
     public IDictionary<string, string> Annotations

@@ -218,6 +218,157 @@ public sealed class ManifestIntegrationTests
         Assert.Contains(innerException.Errors, error => error.Code == "MANIFEST_UNKNOWN");
     }
 
+    [Fact]
+    public async Task PublishAndDeleteAsync_CompleteManifestLifecycle()
+    {
+        string repository = fixture.GetRepositoryName(nameof(PublishAndDeleteAsync_CompleteManifestLifecycle));
+        BlobSeed config = await fixture.UploadBlobAsync(repository, Encoding.UTF8.GetBytes("{}"));
+        var manifest = new OciImageManifest
+        {
+            Config = new OciDescriptor
+            {
+                MediaType = "application/vnd.oci.image.config.v1+json",
+                Size = config.Size,
+                Digest = config.Digest
+            }
+        };
+        using RegistryClient client = fixture.CreateClient();
+
+        ManifestPublishResult typedResult = await client.Manifests.PublishAsync(repository, "typed", manifest);
+        Assert.False(string.IsNullOrWhiteSpace(typedResult.Location));
+        string typedDigest = Assert.IsType<string>(typedResult.Digest);
+        Assert.Equal(typedDigest, await client.Manifests.GetDigestAsync(repository, "typed"));
+
+        ManifestInfo typedInfo = await client.Manifests.GetAsync(repository, typedDigest);
+        Assert.IsType<OciImageManifest>(typedInfo.Manifest);
+
+        byte[] rawContent = Encoding.UTF8.GetBytes(
+            $$"""{"schemaVersion":2,"mediaType":"{{ManifestMediaTypes.OciManifestSchema1}}","config":{"mediaType":"application/vnd.oci.image.config.v1+json","size":{{config.Size}},"digest":"{{config.Digest}}"},"layers":[]}""");
+        ManifestPublishResult rawResult = await client.Manifests.PublishAsync(
+            repository,
+            "raw",
+            rawContent,
+            ManifestMediaTypes.OciManifestSchema1);
+        string rawDigest = Assert.IsType<string>(rawResult.Digest);
+        ManifestInfo rawInfo = await client.Manifests.GetAsync(repository, rawDigest);
+        Assert.Equal(rawContent, rawInfo.Content.ToArray());
+
+        await client.Manifests.DeleteAsync(repository, typedDigest);
+        Assert.False(await client.Manifests.ExistsAsync(repository, typedDigest));
+        Assert.False(await client.Manifests.ExistsAsync(repository, "typed"));
+        Assert.True(await client.Manifests.ExistsAsync(repository, rawDigest));
+    }
+
+    [Fact]
+    public async Task PublishAsync_SubjectWithoutNativeReferrers_PublishesFallbackIndex()
+    {
+        const string ArtifactType = "application/vnd.example.sbom";
+        string repository = fixture.GetRepositoryName(
+            nameof(PublishAsync_SubjectWithoutNativeReferrers_PublishesFallbackIndex));
+        BlobSeed config = await fixture.UploadBlobAsync(repository, Encoding.UTF8.GetBytes("{}"));
+        ManifestSeed subject = await fixture.PutManifestAsync(
+            repository,
+            "subject",
+            ManifestMediaTypes.OciManifestSchema1,
+            new
+            {
+                schemaVersion = 2,
+                mediaType = ManifestMediaTypes.OciManifestSchema1,
+                config = new
+                {
+                    mediaType = "application/vnd.oci.image.config.v1+json",
+                    size = config.Size,
+                    digest = config.Digest
+                },
+                layers = Array.Empty<object>()
+            });
+        var artifact = new OciImageManifest
+        {
+            ArtifactType = ArtifactType,
+            Config = new OciDescriptor
+            {
+                MediaType = "application/vnd.oci.empty.v1+json",
+                Size = config.Size,
+                Digest = config.Digest
+            },
+            Subject = new OciDescriptor
+            {
+                MediaType = ManifestMediaTypes.OciManifestSchema1,
+                Size = subject.Size,
+                Digest = subject.Digest
+            },
+            Annotations = new Dictionary<string, string> { ["name"] = "fallback" }
+        };
+        using RegistryClient client = fixture.CreateClient(new ReferrersFallbackHandler());
+
+        ManifestPublishResult result = await client.Manifests.PublishAsync(repository, "artifact", artifact);
+
+        string artifactDigest = Assert.IsType<string>(result.Digest);
+        Page<OciImageIndex> referrers = await client.Referrers.GetAsync(repository, subject.Digest);
+        OciManifestReference descriptor = Assert.Single(referrers.Value.Manifests);
+        Assert.Equal(artifactDigest, descriptor.Digest);
+        Assert.Equal(ArtifactType, descriptor.ArtifactType);
+        Assert.Equal("fallback", descriptor.Annotations["name"]);
+
+        await client.Manifests.DeleteAsync(repository, artifactDigest);
+
+        Page<OciImageIndex> remainingReferrers = await client.Referrers.GetAsync(
+            repository,
+            subject.Digest);
+        Assert.Empty(remainingReferrers.Value.Manifests);
+    }
+
+    [Fact]
+    public async Task PublishAsync_ConcurrentFallbackUpdatesPreserveAllReferrers()
+    {
+        string repository = fixture.GetRepositoryName(
+            nameof(PublishAsync_ConcurrentFallbackUpdatesPreserveAllReferrers));
+        BlobSeed config = await fixture.UploadBlobAsync(repository, Encoding.UTF8.GetBytes("{}"));
+        ManifestSeed subject = await fixture.PutManifestAsync(
+            repository,
+            "subject",
+            ManifestMediaTypes.OciManifestSchema1,
+            new
+            {
+                schemaVersion = 2,
+                mediaType = ManifestMediaTypes.OciManifestSchema1,
+                config = new
+                {
+                    mediaType = "application/vnd.oci.image.config.v1+json",
+                    size = config.Size,
+                    digest = config.Digest
+                },
+                layers = Array.Empty<object>()
+            });
+        OciImageManifest CreateArtifact(string name) => new()
+        {
+            ArtifactType = "application/vnd.example.concurrent",
+            Config = new OciDescriptor
+            {
+                MediaType = "application/vnd.oci.empty.v1+json",
+                Size = config.Size,
+                Digest = config.Digest
+            },
+            Subject = new OciDescriptor
+            {
+                MediaType = ManifestMediaTypes.OciManifestSchema1,
+                Size = subject.Size,
+                Digest = subject.Digest
+            },
+            Annotations = new Dictionary<string, string> { ["name"] = name }
+        };
+        using RegistryClient client = fixture.CreateClient(new ReferrersFallbackHandler());
+
+        await Task.WhenAll(
+            client.Manifests.PublishAsync(repository, "first", CreateArtifact("first")),
+            client.Manifests.PublishAsync(repository, "second", CreateArtifact("second")));
+
+        Page<OciImageIndex> referrers = await client.Referrers.GetAsync(repository, subject.Digest);
+        Assert.Equal(2, referrers.Value.Manifests.Length);
+        Assert.Contains(referrers.Value.Manifests, descriptor => descriptor.Annotations["name"] == "first");
+        Assert.Contains(referrers.Value.Manifests, descriptor => descriptor.Annotations["name"] == "second");
+    }
+
     private sealed class ManifestMediaTypeHandler(string mediaType) : DelegatingHandler(new HttpClientHandler())
     {
         protected override async Task<HttpResponseMessage> SendAsync(
@@ -230,6 +381,40 @@ public sealed class ManifestIntegrationTests
                 request.RequestUri?.AbsolutePath.Contains("/manifests/") == true)
             {
                 response.Content.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
+            }
+
+            return response;
+        }
+    }
+
+    private sealed class ReferrersFallbackHandler : DelegatingHandler
+    {
+        public ReferrersFallbackHandler()
+            : base(new HttpClientHandler())
+        {
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Get &&
+                request.RequestUri?.AbsolutePath.Contains("/referrers/") == true)
+            {
+                return new HttpResponseMessage(HttpStatusCode.NotFound)
+                {
+                    Content = new StringContent(
+                        """{"errors":[{"code":"MANIFEST_UNKNOWN","message":"referrers API unavailable"}]}""",
+                        Encoding.UTF8,
+                        "application/json")
+                };
+            }
+
+            HttpResponseMessage response = await base.SendAsync(request, cancellationToken);
+            if (request.Method == HttpMethod.Put &&
+                request.RequestUri?.AbsolutePath.Contains("/manifests/") == true)
+            {
+                response.Headers.Remove("OCI-Subject");
             }
 
             return response;
