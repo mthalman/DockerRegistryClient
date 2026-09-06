@@ -84,6 +84,21 @@ string digest = await client.Manifests.GetDigestAsync("example/image", "latest")
 await client.Manifests.DeleteAsync("example/image", digest);
 ```
 
+## Delete a tag
+
+Delete only a tag association while preserving the referenced manifest and any
+other tags that point to it:
+
+```csharp
+await client.Manifests.DeleteTagAsync("example/image", "old-tag");
+```
+
+`DeleteTagAsync` does not accept digest references. Tag deletion is optional in
+the OCI Distribution specification, so registries that do not support it may
+return `400 Bad Request` or `405 Method Not Allowed`. These responses are
+reported as `RegistryException` instances like other unsuccessful registry
+responses.
+
 ## Check whether a manifest exists
 
 ```csharp

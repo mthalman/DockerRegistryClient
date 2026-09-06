@@ -92,6 +92,23 @@ public static class ManifestOperationsExtensions
         CancellationToken cancellationToken = default) =>
         GetWriteOperations(operations).DeleteAsync(repositoryName, digest, cancellationToken);
 
+    /// <summary>
+    /// Deletes a tag association without deleting the referenced manifest.
+    /// </summary>
+    /// <param name="operations">Provider of the manifest operations.</param>
+    /// <param name="repositoryName">Name of the repository containing the tag.</param>
+    /// <param name="tag">Tag to delete. This operation does not accept digests.</param>
+    /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
+    /// <remarks>
+    /// Tag deletion is optional in the OCI Distribution specification. Registries that do not support it may reject the request.
+    /// </remarks>
+    public static Task DeleteTagAsync(
+        this IManifestOperations operations,
+        string repositoryName,
+        string tag,
+        CancellationToken cancellationToken = default) =>
+        GetWriteOperations(operations).DeleteTagAsync(repositoryName, tag, cancellationToken);
+
     private static IManifestWriteOperations GetWriteOperations(IManifestOperations operations)
     {
         if (operations is null)

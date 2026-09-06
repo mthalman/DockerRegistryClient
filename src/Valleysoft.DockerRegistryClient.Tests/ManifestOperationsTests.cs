@@ -785,6 +785,122 @@ public class ManifestOperationsTests
                 cancellationTokenSource.Token));
     }
 
+    [Fact]
+    public async Task DeleteTagAsync_SendsTagReferenceWithoutPreflight()
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Delete,
+            "https://registry.example/v2/repo/manifests/latest",
+            new HttpResponseMessage(HttpStatusCode.Accepted));
+        using var client = CreateClient(handler);
+
+        await client.Manifests.DeleteTagAsync("repo", "latest");
+
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task DeleteTagAsync_NullTag_ThrowsBeforeSendingRequest()
+    {
+        var handler = new MockHttpMessageHandler();
+        using var client = CreateClient(handler);
+
+        ArgumentNullException exception = await Assert.ThrowsAsync<ArgumentNullException>(
+            () => client.Manifests.DeleteTagAsync("repo", null!));
+
+        Assert.Equal("tag", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("sha256:abc")]
+    [InlineData("sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
+    [InlineData("1algo:AbC_=-")]
+    [InlineData("Blake3:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("latest#ignored")]
+    [InlineData("latest?ignored")]
+    [InlineData("repo/latest")]
+    [InlineData("sha256%3Aabc")]
+    [InlineData(".latest")]
+    [InlineData("-latest")]
+    public async Task DeleteTagAsync_InvalidTag_ThrowsBeforeSendingRequest(string tag)
+    {
+        var handler = new MockHttpMessageHandler();
+        using var client = CreateClient(handler);
+
+        ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => client.Manifests.DeleteTagAsync("repo", tag));
+
+        Assert.Equal("tag", exception.ParamName);
+        Assert.Contains("valid manifest tag", exception.Message);
+    }
+
+    [Fact]
+    public async Task DeleteTagAsync_OverlongTag_ThrowsBeforeSendingRequest()
+    {
+        var handler = new MockHttpMessageHandler();
+        using var client = CreateClient(handler);
+
+        ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => client.Manifests.DeleteTagAsync("repo", new string('a', 129)));
+
+        Assert.Equal("tag", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.MethodNotAllowed)]
+    public async Task DeleteTagAsync_UnsupportedResponse_ThrowsRegistryException(HttpStatusCode statusCode)
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Delete,
+            "https://registry.example/v2/repo/manifests/latest",
+            new HttpResponseMessage(statusCode)
+            {
+                Content = new StringContent(
+                    """{"errors":[{"code":"UNSUPPORTED","message":"tag deletion unsupported"}]}""",
+                    Encoding.UTF8,
+                    "application/json")
+            });
+        using var client = CreateClient(handler);
+
+        RegistryException exception = await Assert.ThrowsAsync<RegistryException>(
+            () => client.Manifests.DeleteTagAsync("repo", "latest"));
+
+        Assert.Equal(statusCode, exception.StatusCode);
+        Assert.Contains(exception.Errors, error => error.Code == "UNSUPPORTED");
+    }
+
+    [Fact]
+    public async Task DeleteTagAsync_CanceledToken_ThrowsOperationCanceledException()
+    {
+        var handler = new MockHttpMessageHandler();
+        using var client = CreateClient(handler);
+        using var cancellationTokenSource = new CancellationTokenSource();
+        cancellationTokenSource.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => client.Manifests.DeleteTagAsync(
+                "repo",
+                "latest",
+                cancellationTokenSource.Token));
+    }
+
+    [Fact]
+    public async Task DeleteTagAsync_ReadOnlyImplementation_ThrowsNotSupportedException()
+    {
+        IManifestOperations operations = new ReadOnlyManifestOperations();
+
+        NotSupportedException exception = await Assert.ThrowsAsync<NotSupportedException>(
+            () => operations.DeleteTagAsync("repo", "latest"));
+
+        Assert.Contains(nameof(ReadOnlyManifestOperations), exception.Message);
+    }
+
     private static RegistryClient CreateClient(HttpMessageHandler handler) =>
         new("registry.example", null, new HttpClient(handler), disposeHttpClient: true);
 

@@ -17,6 +17,9 @@ internal class ManifestOperations : IManifestWriteOperations
     private static readonly Regex DigestRegex = new(
         @"\A[a-z0-9]+(?:[+._-][a-z0-9]+)*:[A-Za-z0-9=_-]+\z",
         RegexOptions.CultureInvariant);
+    private static readonly Regex TagRegex = new(
+        @"\A[A-Za-z0-9_][A-Za-z0-9._-]{0,127}\z",
+        RegexOptions.CultureInvariant);
     private readonly SemaphoreSlim[] referrersFallbackLocks = Enumerable.Range(0, 32)
         .Select(_ => new SemaphoreSlim(1, 1))
         .ToArray();
@@ -197,6 +200,25 @@ internal class ManifestOperations : IManifestWriteOperations
                 addReference: false,
                 cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    public async Task DeleteTagAsync(
+        string repositoryName,
+        string tag,
+        CancellationToken cancellationToken = default)
+    {
+        if (tag is null)
+        {
+            throw new ArgumentNullException(nameof(tag));
+        }
+
+        if (!TagRegex.IsMatch(tag))
+        {
+            throw new ArgumentException("A valid manifest tag is required.", nameof(tag));
+        }
+
+        using HttpRequestMessage request = new(HttpMethod.Delete, GetManifestUri(repositoryName, tag));
+        await this.Client.SendRequestAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     private Uri GetManifestUri(string repositoryName, string tagOrDigest) =>
