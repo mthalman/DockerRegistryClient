@@ -27,4 +27,15 @@ public interface IManifestWriteOperations : IManifestOperations
     /// <param name="digest">Digest of the manifest. This operation does not accept tags.</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
     Task DeleteAsync(string repositoryName, string digest, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a tag association without deleting the referenced manifest.
+    /// </summary>
+    /// <param name="repositoryName">Name of the repository containing the tag.</param>
+    /// <param name="tag">Tag to delete. This operation does not accept digests.</param>
+    /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
+    /// <remarks>
+    /// Tag deletion is optional in the OCI Distribution specification. Registries that do not support it may reject the request.
+    /// </remarks>
+    Task DeleteTagAsync(string repositoryName, string tag, CancellationToken cancellationToken = default);
 }

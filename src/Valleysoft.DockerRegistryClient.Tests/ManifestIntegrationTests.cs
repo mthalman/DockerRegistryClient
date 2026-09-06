@@ -260,6 +260,33 @@ public sealed class ManifestIntegrationTests
     }
 
     [Fact]
+    public async Task DeleteTagAsync_RemovesOnlySelectedTag()
+    {
+        string repository = fixture.GetRepositoryName(nameof(DeleteTagAsync_RemovesOnlySelectedTag));
+        BlobSeed config = await fixture.UploadBlobAsync(repository, Encoding.UTF8.GetBytes("{}"));
+        var manifest = new OciImageManifest
+        {
+            Config = new OciDescriptor
+            {
+                MediaType = "application/vnd.oci.image.config.v1+json",
+                Size = config.Size,
+                Digest = config.Digest
+            }
+        };
+        using RegistryClient client = fixture.CreateClient();
+
+        ManifestPublishResult firstResult = await client.Manifests.PublishAsync(repository, "first", manifest);
+        string digest = Assert.IsType<string>(firstResult.Digest);
+        await client.Manifests.PublishAsync(repository, "second", manifest);
+
+        await client.Manifests.DeleteTagAsync(repository, "first");
+
+        Assert.False(await client.Manifests.ExistsAsync(repository, "first"));
+        Assert.True(await client.Manifests.ExistsAsync(repository, "second"));
+        Assert.True(await client.Manifests.ExistsAsync(repository, digest));
+    }
+
+    [Fact]
     public async Task PublishAsync_SubjectWithoutNativeReferrers_PublishesFallbackIndex()
     {
         const string ArtifactType = "application/vnd.example.sbom";
