@@ -506,7 +506,10 @@ internal class ManifestOperations : IManifestWriteOperations
         return $"sha256:{encoded}";
     }
 
-    private static void VerifyDigestIfSupported(string digest, byte[] content)
+    internal static bool VerifyDigestIfSupported(string digest, ReadOnlyMemory<byte> content) =>
+        VerifyDigestIfSupported(digest, content.ToArray());
+
+    private static bool VerifyDigestIfSupported(string digest, byte[] content)
     {
         if (!IsValidDigest(digest))
         {
@@ -524,7 +527,7 @@ internal class ManifestOperations : IManifestWriteOperations
         };
         if (hashAlgorithm is null)
         {
-            return;
+            return false;
         }
 
         string actual = BitConverter.ToString(hashAlgorithm.ComputeHash(content))
@@ -534,13 +537,15 @@ internal class ManifestOperations : IManifestWriteOperations
         if (!actual.Equals(expected, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                $"Registry returned manifest digest '{digest}', but the published content has digest '{algorithm}:{actual}'.");
+                $"Registry returned manifest digest '{digest}', but the content has digest '{algorithm}:{actual}'.");
         }
+
+        return true;
     }
 
-    private static bool IsValidDigest(string digest)
+    internal static bool IsValidDigest(string digest)
     {
-        if (!DigestRegex.IsMatch(digest))
+        if (string.IsNullOrEmpty(digest) || !DigestRegex.IsMatch(digest))
         {
             return false;
         }
@@ -557,6 +562,9 @@ internal class ManifestOperations : IManifestWriteOperations
             _ => true
         };
     }
+
+    internal static bool IsValidReference(string reference) =>
+        IsValidDigest(reference) || TagRegex.IsMatch(reference);
 
     private static bool IsLowerHex(string value, int expectedLength) =>
         value.Length == expectedLength &&

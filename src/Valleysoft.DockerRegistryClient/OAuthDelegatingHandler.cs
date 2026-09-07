@@ -7,8 +7,6 @@ namespace Valleysoft.DockerRegistryClient;
 
 internal class OAuthDelegatingHandler : DelegatingHandler
 {
-    private AuthenticationHeaderValue? authorization;
-
     public OAuthDelegatingHandler()
     {
     }
@@ -19,13 +17,17 @@ internal class OAuthDelegatingHandler : DelegatingHandler
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        authorization = request.Headers.Authorization;
+        AuthenticationHeaderValue? authorization = request.Headers.Authorization;
         
         HttpResponseMessage response = await base.SendAsync(request, cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
-            request = await GetAuthenticatedRequestAsync(response, request, cancellationToken).ConfigureAwait(false);
+            request = await GetAuthenticatedRequestAsync(
+                response,
+                request,
+                authorization,
+                cancellationToken).ConfigureAwait(false);
             response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
         }
         else if (authorization is not null && response.StatusCode == HttpStatusCode.Forbidden)
@@ -39,14 +41,24 @@ internal class OAuthDelegatingHandler : DelegatingHandler
         return response;
     }
 
-    private async Task<HttpRequestMessage> GetAuthenticatedRequestAsync(HttpResponseMessage response, HttpRequestMessage request, CancellationToken cancellationToken = default)
+    private async Task<HttpRequestMessage> GetAuthenticatedRequestAsync(
+        HttpResponseMessage response,
+        HttpRequestMessage request,
+        AuthenticationHeaderValue? authorization,
+        CancellationToken cancellationToken = default)
     {
-        var authToken = await GetOAuthTokenAsync(response, request, cancellationToken).ConfigureAwait(false);
+        var authToken = await GetOAuthTokenAsync(
+            response,
+            authorization,
+            cancellationToken).ConfigureAwait(false);
         request.Headers.Authorization = new AuthenticationHeaderValue(HttpBearerChallenge.Bearer, authToken.AccessToken ?? authToken.Token);
         return request;
     }
 
-    private async Task<OAuthToken> GetOAuthTokenAsync(HttpResponseMessage response, HttpRequestMessage unauthorizedRequest, CancellationToken cancellationToken = default)
+    private async Task<OAuthToken> GetOAuthTokenAsync(
+        HttpResponseMessage response,
+        AuthenticationHeaderValue? authorization,
+        CancellationToken cancellationToken = default)
     {
         AuthenticationHeaderValue? bearerHeader = response.Headers.WwwAuthenticate
             .AsEnumerable()

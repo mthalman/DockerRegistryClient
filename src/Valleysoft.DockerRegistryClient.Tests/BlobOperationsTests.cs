@@ -327,7 +327,8 @@ public class BlobOperationsTests
             {
                 byte[] content = request.Content!.ReadAsByteArrayAsync().GetAwaiter().GetResult();
                 return request.Method == HttpMethod.Put &&
-                    request.RequestUri == new Uri("https://registry.example/v2/repo/blobs/uploads/upload-id?digest=sha256:abc") &&
+                    request.RequestUri == new Uri(
+                        $"https://registry.example/v2/repo/blobs/uploads/upload-id?digest={Uri.EscapeDataString("sha256:abc")}") &&
                     request.Headers.Authorization?.Parameter == "credential-token" &&
                     request.Content.Headers.ContentType?.MediaType == "application/octet-stream" &&
                     content.SequenceEqual(new byte[] { 4 });
