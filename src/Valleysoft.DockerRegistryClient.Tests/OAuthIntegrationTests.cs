@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using Valleysoft.DockerRegistryClient.Credentials;
 using Valleysoft.DockerRegistryClient.Models;
 using Xunit;
 
@@ -15,30 +16,18 @@ public sealed class OAuthIntegrationTests
     public async Task CatalogRequest_CompletesBearerTokenFlow()
     {
         await using var server = new OAuthLoopbackServer();
-        using var client = new RegistryClient(
-            server.BaseUri.AbsoluteUri,
-            serviceClientCredentials: null,
-            new SocketsHttpHandler
-            {
-                MaxConnectionsPerServer = 1,
-                MaxResponseDrainSize = 0,
-                UseProxy = false
-            });
+        using RegistryClient client = CreateClient(server);
         using var cancellationSource = new CancellationTokenSource(TestTimeout);
 
-        Page<Catalog> catalog = await client.Catalog.GetAsync(
-            cancellationToken: cancellationSource.Token);
-        await server.Completion.WaitAsync(TestTimeout);
+        Page<Catalog> catalog = await GetCatalogAsync(
+            client,
+            server,
+            cancellationSource.Token);
 
         Assert.Equal(["authenticated/repo"], catalog.Value.RepositoryNames);
         Assert.Collection(
             server.Requests,
-            request =>
-            {
-                Assert.Equal("GET", request.Method);
-                Assert.Equal("/v2/_catalog", request.Target);
-                Assert.False(request.Headers.ContainsKey("Authorization"));
-            },
+            request => AssertCatalogRequest(request, expectedAuthorization: null),
             request =>
             {
                 Assert.Equal("GET", request.Method);
@@ -47,21 +36,130 @@ public sealed class OAuthIntegrationTests
                 Assert.Contains("scope=registry:catalog:*", request.Target);
                 Assert.False(request.Headers.ContainsKey("Authorization"));
             },
+            request => AssertCatalogRequest(request, "Bearer access-token"));
+    }
+
+    [Fact]
+    public async Task CatalogRequest_ForwardsBasicCredentialsToTokenEndpoint()
+    {
+        await using var server = new OAuthLoopbackServer();
+        using RegistryClient client = CreateClient(
+            server,
+            new BasicAuthenticationCredentials("registry-user", "registry-password"));
+        using var cancellationSource = new CancellationTokenSource(TestTimeout);
+
+        Page<Catalog> catalog = await GetCatalogAsync(
+            client,
+            server,
+            cancellationSource.Token);
+
+        string basicCredentials = Convert.ToBase64String(
+            Encoding.UTF8.GetBytes("registry-user:registry-password"));
+        Assert.Equal(["authenticated/repo"], catalog.Value.RepositoryNames);
+        Assert.Collection(
+            server.Requests,
+            request => AssertCatalogRequest(request, $"Basic {basicCredentials}"),
             request =>
             {
                 Assert.Equal("GET", request.Method);
-                Assert.Equal("/v2/_catalog", request.Target);
-                Assert.Equal("Bearer access-token", request.Headers["Authorization"]);
-            });
+                Assert.StartsWith("/token?", request.Target);
+                Assert.Equal($"Basic {basicCredentials}", request.Headers["Authorization"]);
+                Assert.Empty(request.Body);
+            },
+            request => AssertCatalogRequest(request, "Bearer access-token"));
     }
+
+    [Fact]
+    public async Task CatalogRequest_ExchangesRefreshTokenWithPost()
+    {
+        await using var server = new OAuthLoopbackServer("""{"token":"access-token"}""");
+        using RegistryClient client = CreateClient(
+            server,
+            new TokenCredentials("refresh-token"));
+        using var cancellationSource = new CancellationTokenSource(TestTimeout);
+
+        Page<Catalog> catalog = await GetCatalogAsync(
+            client,
+            server,
+            cancellationSource.Token);
+
+        Assert.Equal(["authenticated/repo"], catalog.Value.RepositoryNames);
+        Assert.Collection(
+            server.Requests,
+            request => AssertCatalogRequest(request, "Bearer refresh-token"),
+            request =>
+            {
+                Assert.Equal("POST", request.Method);
+                Assert.Equal("/token", request.Target);
+                Assert.Equal(
+                    "application/x-www-form-urlencoded",
+                    request.Headers["Content-Type"]);
+                Dictionary<string, string> form = ParseForm(request.Body);
+                Assert.Equal("registry-client", form["client_id"]);
+                Assert.Equal("refresh_token", form["grant_type"]);
+                Assert.Equal("refresh-token", form["refresh_token"]);
+                Assert.Equal("registry:catalog:*", form["scope"]);
+                Assert.Equal("registry.example", form["service"]);
+            },
+            request => AssertCatalogRequest(request, "Bearer access-token"));
+    }
+
+    private static void AssertCatalogRequest(
+        LoopbackRequest request,
+        string? expectedAuthorization)
+    {
+        Assert.Equal("GET", request.Method);
+        Assert.Equal("/v2/_catalog", request.Target);
+
+        if (expectedAuthorization is null)
+        {
+            Assert.False(request.Headers.ContainsKey("Authorization"));
+        }
+        else
+        {
+            Assert.Equal(expectedAuthorization, request.Headers["Authorization"]);
+        }
+    }
+
+    private static RegistryClient CreateClient(
+        OAuthLoopbackServer server,
+        IRegistryClientCredentials? credentials = null) =>
+        new(
+            server.BaseUri.AbsoluteUri,
+            credentials,
+            new SocketsHttpHandler
+            {
+                MaxConnectionsPerServer = 1,
+                MaxResponseDrainSize = 0,
+                UseProxy = false
+            });
+
+    private static async Task<Page<Catalog>> GetCatalogAsync(
+        RegistryClient client,
+        OAuthLoopbackServer server,
+        CancellationToken cancellationToken)
+    {
+        Page<Catalog> catalog = await client.Catalog.GetAsync(
+            cancellationToken: cancellationToken);
+        await server.Completion.WaitAsync(TestTimeout);
+        return catalog;
+    }
+
+    private static Dictionary<string, string> ParseForm(string content) =>
+        content.Split('&').ToDictionary(
+            pair => Uri.UnescapeDataString(pair[..pair.IndexOf('=')]),
+            pair => Uri.UnescapeDataString(pair[(pair.IndexOf('=') + 1)..]));
 
     private sealed class OAuthLoopbackServer : IAsyncDisposable
     {
         private readonly TcpListener _listener;
         private readonly CancellationTokenSource _cancellationSource = new();
+        private readonly string _tokenResponse;
 
-        public OAuthLoopbackServer()
+        public OAuthLoopbackServer(
+            string tokenResponse = """{"access_token":"access-token"}""")
         {
+            _tokenResponse = tokenResponse;
             _listener = new TcpListener(IPAddress.Loopback, 0);
             _listener.Start();
             int port = ((IPEndPoint)_listener.LocalEndpoint).Port;
@@ -118,7 +216,7 @@ public sealed class OAuthIntegrationTests
             {
                 1 => CreateResponse(
                     HttpStatusCode.OK,
-                    """{"access_token":"access-token"}""",
+                    _tokenResponse,
                     "Content-Type: application/json\r\n"),
                 2 => CreateResponse(
                     HttpStatusCode.OK,
@@ -181,7 +279,28 @@ public sealed class OAuthIntegrationTests
                 headers[headerLine[..separatorIndex]] = headerLine[(separatorIndex + 1)..].Trim();
             }
 
-            return new LoopbackRequest(requestParts[0], requestParts[1], headers);
+            string body = string.Empty;
+            if (headers.TryGetValue("Content-Length", out string? contentLength))
+            {
+                char[] content = new char[int.Parse(contentLength)];
+                int offset = 0;
+                while (offset < content.Length)
+                {
+                    int charsRead = await reader.ReadAsync(
+                        content.AsMemory(offset),
+                        cancellationToken);
+                    if (charsRead == 0)
+                    {
+                        throw new InvalidOperationException("The request body ended unexpectedly.");
+                    }
+
+                    offset += charsRead;
+                }
+
+                body = new string(content);
+            }
+
+            return new LoopbackRequest(requestParts[0], requestParts[1], headers, body);
         }
 
         private static async Task WriteResponseAsync(
@@ -211,5 +330,6 @@ public sealed class OAuthIntegrationTests
     private sealed record LoopbackRequest(
         string Method,
         string Target,
-        IReadOnlyDictionary<string, string> Headers);
+        IReadOnlyDictionary<string, string> Headers,
+        string Body);
 }
