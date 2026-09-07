@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using Xunit;
 
@@ -12,7 +13,11 @@ public class OAuthDelegatingHandlerTests
     public async Task SendAsync_BearerChallenge_GetsTokenAndRetriesRequest()
     {
         var innerHandler = new MockHttpMessageHandler();
-        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        var challengeContent = new TrackingContent("challenge");
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = challengeContent
+        };
         unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
             "Bearer",
             "realm=\"https://auth.example/token\",service=\"registry.example\",scope=\"repository:repo:pull\""));
@@ -23,15 +28,18 @@ public class OAuthDelegatingHandlerTests
             unauthorizedResponse);
 
         AuthenticationHeaderValue? retryAuthorization = null;
+        var tokenContent = new TrackingContent("""{"access_token":"access-token"}""");
         innerHandler.AddExpectedRequest(
-            request => request.Method == HttpMethod.Get &&
+            request => challengeContent.IsDisposed &&
+                request.Method == HttpMethod.Get &&
                 request.RequestUri?.Host == "auth.example" &&
                 request.RequestUri.Query.Contains("service=registry.example") &&
                 request.RequestUri.Query.Contains("scope=repository:repo:pull"),
             new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent("""{"access_token":"access-token"}""")
+                Content = tokenContent
             });
+        var finalContent = new TrackingContent("final");
         innerHandler.AddExpectedRequest(
             request =>
             {
@@ -39,7 +47,10 @@ public class OAuthDelegatingHandlerTests
                 return request.Method == HttpMethod.Get &&
                     request.RequestUri == new Uri("https://registry.example/v2/repo/tags/list");
             },
-            new HttpResponseMessage(HttpStatusCode.OK));
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = finalContent
+            });
 
         using var httpClient = new HttpClient(new OAuthDelegatingHandler(innerHandler));
 
@@ -48,6 +59,10 @@ public class OAuthDelegatingHandlerTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("Bearer", retryAuthorization?.Scheme);
         Assert.Equal("access-token", retryAuthorization?.Parameter);
+        Assert.True(challengeContent.IsDisposed);
+        Assert.True(tokenContent.IsDisposed);
+        Assert.False(finalContent.IsDisposed);
+        Assert.Equal("final", await response.Content.ReadAsStringAsync());
         Assert.Equal(0, innerHandler.RemainingRequestCount);
     }
 
@@ -63,10 +78,12 @@ public class OAuthDelegatingHandlerTests
             request => request.Headers.Authorization?.Parameter == "refresh-token",
             unauthorizedResponse);
 
+        HttpRequestMessage? tokenRequest = null;
         string? tokenRequestBody = null;
         innerHandler.AddExpectedRequest(
             request =>
             {
+                tokenRequest = request;
                 tokenRequestBody = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
                 return request.Method == HttpMethod.Post &&
                     request.RequestUri == new Uri("https://auth.example/token");
@@ -89,6 +106,8 @@ public class OAuthDelegatingHandlerTests
         Assert.Contains("grant_type=refresh_token", tokenRequestBody);
         Assert.Contains("refresh_token=refresh-token", tokenRequestBody);
         Assert.Contains("scope=repository%3Arepo%3Apush", tokenRequestBody);
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => tokenRequest!.Content!.ReadAsStringAsync());
         Assert.Equal(0, innerHandler.RemainingRequestCount);
     }
 
@@ -96,18 +115,28 @@ public class OAuthDelegatingHandlerTests
     public async Task SendAsync_InvalidTokenResponse_ThrowsJsonException()
     {
         var innerHandler = new MockHttpMessageHandler();
-        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        var challengeContent = new TrackingContent("challenge");
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = challengeContent
+        };
         unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
             "Bearer",
             "realm=\"https://auth.example/token\",service=\"registry.example\",scope=\"repository:repo:pull\""));
         innerHandler.AddExpectedRequest(
             "https://registry.example/v2/",
             unauthorizedResponse);
+        var tokenContent = new TrackingContent("not-json");
+        var tokenRequestContent = new TrackingContent("token-request");
         innerHandler.AddExpectedRequest(
-            request => request.RequestUri?.Host == "auth.example",
+            request =>
+            {
+                request.Content = tokenRequestContent;
+                return request.RequestUri?.Host == "auth.example";
+            },
             new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent("not-json")
+                Content = tokenContent
             });
 
         using var httpClient = new HttpClient(new OAuthDelegatingHandler(innerHandler));
@@ -116,6 +145,128 @@ public class OAuthDelegatingHandlerTests
             () => httpClient.GetAsync("https://registry.example/v2/"));
 
         Assert.Contains("Unable to deserialize the response", exception.Message);
+        Assert.True(challengeContent.IsDisposed);
+        Assert.True(tokenRequestContent.IsDisposed);
+        Assert.True(tokenContent.IsDisposed);
+    }
+
+    [Fact]
+    public async Task SendAsync_UnsuccessfulTokenResponse_DisposesIntermediateResponses()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var challengeContent = new TrackingContent("challenge");
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = challengeContent
+        };
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer",
+            "realm=\"https://auth.example/token\",service=\"registry.example\",scope=\"repository:repo:pull\""));
+        innerHandler.AddExpectedRequest(
+            "https://registry.example/v2/",
+            unauthorizedResponse);
+        var tokenContent = new TrackingContent("error");
+        var tokenRequestContent = new TrackingContent("token-request");
+        innerHandler.AddExpectedRequest(
+            request =>
+            {
+                request.Content = tokenRequestContent;
+                return request.RequestUri?.Host == "auth.example";
+            },
+            new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            {
+                Content = tokenContent
+            });
+
+        using var httpClient = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => httpClient.GetAsync("https://registry.example/v2/"));
+
+        Assert.True(challengeContent.IsDisposed);
+        Assert.True(tokenRequestContent.IsDisposed);
+        Assert.True(tokenContent.IsDisposed);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_CanceledBeforeTokenRequest_DoesNotCreateTokenRequest()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        using var cancellationSource = new CancellationTokenSource();
+        var challengeContent = new TrackingContent("challenge");
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = challengeContent
+        };
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer",
+            "realm=\"http://[\",service=\"registry.example\",scope=\"repository:repo:push\""));
+        innerHandler.AddExpectedRequest(
+            request =>
+            {
+                cancellationSource.Cancel();
+                return request.Headers.Authorization?.Parameter == "refresh-token";
+            },
+            unauthorizedResponse);
+
+        using var httpClient = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var request = new HttpRequestMessage(HttpMethod.Put, "https://registry.example/v2/repo/blobs/uploads/id");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "refresh-token");
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => httpClient.SendAsync(request, cancellationSource.Token));
+
+        Assert.True(challengeContent.IsDisposed);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_CanceledTokenRead_DisposesIntermediateMessages()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var challengeContent = new TrackingContent("challenge");
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = challengeContent
+        };
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer",
+            "realm=\"https://auth.example/token\",service=\"registry.example\",scope=\"repository:repo:push\""));
+        innerHandler.AddExpectedRequest(
+            request => request.Headers.Authorization?.Parameter == "refresh-token",
+            unauthorizedResponse);
+
+        using var cancellationSource = new CancellationTokenSource();
+        HttpRequestMessage? tokenRequest = null;
+        HttpContent? tokenRequestContent = null;
+        var tokenContent = new CancelingContent(cancellationSource);
+        innerHandler.AddExpectedRequest(
+            request =>
+            {
+                tokenRequest = request;
+                tokenRequestContent = request.Content;
+                return request.Method == HttpMethod.Post &&
+                    request.RequestUri == new Uri("https://auth.example/token");
+            },
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = tokenContent
+            });
+
+        using var httpClient = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var request = new HttpRequestMessage(HttpMethod.Put, "https://registry.example/v2/repo/blobs/uploads/id");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "refresh-token");
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => httpClient.SendAsync(request, cancellationSource.Token));
+
+        Assert.True(challengeContent.IsDisposed);
+        Assert.True(tokenContent.IsDisposed);
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => tokenRequestContent!.ReadAsStringAsync());
+        Assert.Same(tokenRequestContent, tokenRequest!.Content);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
     }
 
     [Fact]
@@ -197,6 +348,55 @@ public class OAuthDelegatingHandlerTests
             TransportContext? context)
         {
             await sendNestedRequest();
+        }
+    }
+
+    private sealed class TrackingContent(string content) : HttpContent
+    {
+        private readonly byte[] _content = Encoding.UTF8.GetBytes(content);
+
+        public bool IsDisposed { get; private set; }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = _content.Length;
+            return true;
+        }
+
+        protected override Task SerializeToStreamAsync(
+            Stream stream,
+            TransportContext? context) =>
+            stream.WriteAsync(_content, 0, _content.Length);
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = disposing;
+            base.Dispose(disposing);
+        }
+    }
+
+    private sealed class CancelingContent(CancellationTokenSource cancellationSource) : HttpContent
+    {
+        public bool IsDisposed { get; private set; }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+
+        protected override Task SerializeToStreamAsync(
+            Stream stream,
+            TransportContext? context)
+        {
+            cancellationSource.Cancel();
+            return Task.FromCanceled(cancellationSource.Token);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = disposing;
+            base.Dispose(disposing);
         }
     }
 }
