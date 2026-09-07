@@ -563,6 +563,9 @@ internal class ManifestOperations : IManifestWriteOperations
         };
     }
 
+    internal static bool IsValidReference(string reference) =>
+        IsValidDigest(reference) || TagRegex.IsMatch(reference);
+
     private static bool IsLowerHex(string value, int expectedLength) =>
         value.Length == expectedLength &&
         value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');

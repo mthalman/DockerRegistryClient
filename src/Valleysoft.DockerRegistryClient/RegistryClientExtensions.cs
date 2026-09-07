@@ -55,6 +55,8 @@ public static class RegistryClientExtensions
         ValidateRequired(sourceReference, nameof(sourceReference));
         ValidateRequired(destinationRepositoryName, nameof(destinationRepositoryName));
         ValidateRequired(destinationReference, nameof(destinationReference));
+        ValidateReference(sourceReference, nameof(sourceReference));
+        ValidateReference(destinationReference, nameof(destinationReference));
 
         return new CopyContext(
             sourceClient,
@@ -71,6 +73,16 @@ public static class RegistryClientExtensions
         if (string.IsNullOrWhiteSpace(value))
         {
             throw new ArgumentException("The value cannot be null, empty, or whitespace.", parameterName);
+        }
+    }
+
+    private static void ValidateReference(string value, string parameterName)
+    {
+        if (!ManifestOperations.IsValidReference(value))
+        {
+            throw new ArgumentException(
+                "The value must be a valid manifest tag or digest.",
+                parameterName);
         }
     }
 

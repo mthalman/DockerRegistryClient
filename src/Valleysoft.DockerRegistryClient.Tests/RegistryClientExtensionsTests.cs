@@ -1142,6 +1142,36 @@ public class RegistryClientExtensionsTests
         Assert.Equal(expectedParameterName, exception.ParamName);
     }
 
+    [Theory]
+    [InlineData("latest/other", "latest", "sourceReference")]
+    [InlineData("latest?other=true", "latest", "sourceReference")]
+    [InlineData("latest#fragment", "latest", "sourceReference")]
+    [InlineData("latest", "other/latest", "destinationReference")]
+    [InlineData("latest", "latest?overwrite=true", "destinationReference")]
+    [InlineData("latest", "latest#fragment", "destinationReference")]
+    public async Task CopyAsync_InvalidReference_ThrowsBeforeSendingRequest(
+        string sourceReference,
+        string destinationReference,
+        string expectedParameterName)
+    {
+        var sourceHandler = new MockHttpMessageHandler();
+        var destinationHandler = new MockHttpMessageHandler();
+        using var sourceClient = CreateClient("source.example", sourceHandler);
+        using var destinationClient = CreateClient("destination.example", destinationHandler);
+
+        ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => sourceClient.CopyAsync(
+                "source",
+                sourceReference,
+                destinationClient,
+                "destination",
+                destinationReference));
+
+        Assert.Equal(expectedParameterName, exception.ParamName);
+        Assert.Equal(0, sourceHandler.RemainingRequestCount);
+        Assert.Equal(0, destinationHandler.RemainingRequestCount);
+    }
+
     private static RegistryClient CreateClient(string registry, MockHttpMessageHandler handler) =>
         new(registry, serviceClientCredentials: null, handler);
 
