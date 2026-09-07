@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http;
 using System.Text.Json;
 using Xunit;
 
@@ -117,4 +118,85 @@ public class OAuthDelegatingHandlerTests
         Assert.Contains("Unable to deserialize the response", exception.Message);
     }
 
+    [Fact]
+    public async Task SendAsync_NestedRequest_DoesNotReplaceOuterAuthorization()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer",
+            "realm=\"https://auth.example/token\",service=\"destination.example\",scope=\"repository:repo:push\""));
+        HttpClient? httpClient = null;
+        using var content = new NestedRequestContent(async () =>
+        {
+            using var nestedRequest = new HttpRequestMessage(
+                HttpMethod.Get,
+                "https://source.example/blob");
+            nestedRequest.Headers.Authorization =
+                new AuthenticationHeaderValue("Bearer", "source-refresh-token");
+            using HttpResponseMessage response = await httpClient!.SendAsync(nestedRequest);
+        });
+        innerHandler.AddExpectedRequest(
+            request =>
+            {
+                request.Content!.CopyToAsync(Stream.Null).GetAwaiter().GetResult();
+                return request.Headers.Authorization?.Parameter == "destination-refresh-token";
+            },
+            unauthorizedResponse);
+        innerHandler.AddExpectedRequest(
+            request =>
+                request.RequestUri == new Uri("https://source.example/blob") &&
+                request.Headers.Authorization?.Parameter == "source-refresh-token",
+            new HttpResponseMessage(HttpStatusCode.OK));
+        string? tokenRequestBody = null;
+        innerHandler.AddExpectedRequest(
+            request =>
+            {
+                tokenRequestBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                return request.RequestUri == new Uri("https://auth.example/token");
+            },
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"access_token":"destination-access-token"}""")
+            });
+        innerHandler.AddExpectedRequest(
+            request => request.Headers.Authorization?.Parameter == "destination-access-token",
+            new HttpResponseMessage(HttpStatusCode.OK));
+        httpClient = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using (httpClient)
+        using (var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://destination.example/upload"))
+        {
+            request.Headers.Authorization =
+                new AuthenticationHeaderValue("Bearer", "destination-refresh-token");
+            request.Content = content;
+
+            using HttpResponseMessage response = await httpClient.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        Assert.Contains(
+            "refresh_token=destination-refresh-token",
+            tokenRequestBody);
+        Assert.DoesNotContain("source-refresh-token", tokenRequestBody);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    private sealed class NestedRequestContent(Func<Task> sendNestedRequest) : HttpContent
+    {
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return true;
+        }
+
+        protected override async Task SerializeToStreamAsync(
+            Stream stream,
+            TransportContext? context)
+        {
+            await sendNestedRequest();
+        }
+    }
 }

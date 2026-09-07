@@ -34,6 +34,19 @@ internal class BlobOperations : IBlobOperations
         return streamContentResponse;
     }
 
+    internal async Task<Stream> GetForCopyAsync(
+        string repositoryName,
+        string digest,
+        CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage request = CreateDownloadRequest(repositoryName, digest);
+        HttpResponseMessage response = await this.Client.SendRequestCoreAsync(
+            request,
+            cancellationToken: cancellationToken,
+            completionOption: HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+        return await CreateBlobStreamAsync(response).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Returns a range of bytes from the specified blob.
     /// </summary>
@@ -84,6 +97,30 @@ internal class BlobOperations : IBlobOperations
     {
         using HttpRequestMessage request = new(HttpMethod.Head, $"{this.Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/{digest}");
         return await this.Client.SendExistsRequestAsync(request, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<(bool Exists, long? Size)> GetExistenceForCopyAsync(
+        string repositoryName,
+        string digest,
+        CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage request = new(
+            HttpMethod.Head,
+            $"{Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/{digest}");
+        try
+        {
+            using HttpResponseMessage response = await Client.SendRequestCoreAsync(
+                request,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            long? size = response.Content.Headers.Contains("Content-Length")
+                ? response.Content.Headers.ContentLength
+                : null;
+            return (true, size);
+        }
+        catch (RegistryException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
+        {
+            return (false, null);
+        }
     }
 
     /// <summary>
@@ -147,6 +184,65 @@ internal class BlobOperations : IBlobOperations
         return new BlobUploadInitializationResult(GetLocation(response), GetUploadId(response), new BlobUploadContext(request.Headers.Authorization));
     }
 
+    internal async Task<BlobUploadSession> BeginUploadForCopyAsync(
+        string repositoryName,
+        CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage request = new(
+            HttpMethod.Post,
+            $"{Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/uploads/");
+        using HttpResponseMessage response = await this.Client.SendRequestCoreAsync(
+            request,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        return new BlobUploadSession(
+            GetLocation(response),
+            new BlobUploadContext(request.Headers.Authorization));
+    }
+
+    internal async Task<BlobMountResult> MountAsync(
+        string repositoryName,
+        string digest,
+        string sourceRepositoryName,
+        CancellationToken cancellationToken = default)
+    {
+        string requestUri = $"{Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/uploads/" +
+            $"?mount={Uri.EscapeDataString(digest)}&from={Uri.EscapeDataString(sourceRepositoryName)}";
+        using HttpRequestMessage request = new(HttpMethod.Post, requestUri);
+
+        try
+        {
+            using HttpResponseMessage response = await this.Client.SendRequestCoreAsync(
+                request,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            if (response.StatusCode == HttpStatusCode.Created)
+            {
+                return BlobMountResult.Mounted;
+            }
+
+            if (response.StatusCode == HttpStatusCode.Accepted)
+            {
+                return new BlobMountResult(
+                    new BlobUploadSession(
+                        GetLocation(response),
+                        new BlobUploadContext(request.Headers.Authorization)));
+            }
+
+            throw new InvalidOperationException(
+                $"Unexpected successful response status code for a blob mount: {response.StatusCode}.");
+        }
+        catch (RegistryException exception) when (
+            exception.StatusCode is HttpStatusCode.Unauthorized or
+                HttpStatusCode.Forbidden or
+                HttpStatusCode.BadRequest or
+                HttpStatusCode.NotFound or
+                HttpStatusCode.MethodNotAllowed)
+        {
+            return BlobMountResult.Unsupported;
+        }
+    }
+
     /// <summary>
     /// Sends an upload stream as a chunk of the overall data to be uploaded for the blob.
     /// </summary>
@@ -196,13 +292,42 @@ internal class BlobOperations : IBlobOperations
     /// </remarks>
     public async Task<BlobUploadResult> EndUploadAsync(string uploadLocation, string digest, BlobUploadContext uploadContext, Stream? stream = null, CancellationToken cancellationToken = default)
     {
+        HttpContent? content = stream is null ? null : CreateStreamContent(stream);
+        return await EndUploadCoreAsync(
+            uploadLocation,
+            digest,
+            uploadContext,
+            content,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    internal Task<BlobUploadResult> EndUploadForCopyAsync(
+        string uploadLocation,
+        string digest,
+        BlobUploadContext uploadContext,
+        HttpContent content,
+        CancellationToken cancellationToken = default) =>
+        EndUploadCoreAsync(
+            uploadLocation,
+            digest,
+            uploadContext,
+            content,
+            cancellationToken);
+
+    private async Task<BlobUploadResult> EndUploadCoreAsync(
+        string uploadLocation,
+        string digest,
+        BlobUploadContext uploadContext,
+        HttpContent? content,
+        CancellationToken cancellationToken)
+    {
         Uri uri = new(Client.BaseUri, uploadLocation);
         char uriAppendChar = string.IsNullOrEmpty(uri.Query) ? '?' : '&';
-        uri = new Uri($"{uri}{uriAppendChar}digest={digest}");
+        uri = new Uri($"{uri}{uriAppendChar}digest={Uri.EscapeDataString(digest)}");
 
         using HttpRequestMessage request = new(HttpMethod.Put, uri)
         {
-            Content = stream is null ? null : CreateStreamContent(stream)
+            Content = content
         };
         // Reuse the Auth header from the initial upload to avoid re-authenticating and wasting upload time in OAuth flow
         request.Headers.Authorization = uploadContext.Authorization;

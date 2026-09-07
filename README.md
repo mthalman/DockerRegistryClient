@@ -45,6 +45,7 @@ All operation methods accept an optional `CancellationToken`.
 
 ## Guides
 
+- [Copy images and artifacts](docs/copy.md) - Copy complete content graphs within or between registries
 - [Authentication](docs/authentication.md) - Configure anonymous, basic, token, or custom credentials
 - [Error handling](docs/error-handling.md) - Handle `RegistryException` and registry error details
 - [Contributing](CONTRIBUTING.md)
