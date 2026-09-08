@@ -11,6 +11,48 @@ namespace Valleysoft.DockerRegistryClient.Tests;
 public sealed class OAuthDelegatingHandlerIntegrationTests
 {
     [Fact]
+    public async Task SendAsync_AuthorizedForbidden_CompletesAnonymousBearerChallenge()
+    {
+        using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+
+        try
+        {
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            Task serverTask = RunForbiddenFallbackServerAsync(
+                listener,
+                port,
+                cancellationSource.Token);
+            using var transport = new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                UseProxy = false
+            };
+            using var client = new HttpClient(
+                new OAuthDelegatingHandler(transport));
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"http://127.0.0.1:{port}/v2/repo/tags/list");
+            request.Headers.Authorization =
+                new AuthenticationHeaderValue("Basic", "credentials");
+
+            Task<HttpResponseMessage> responseTask = client.SendAsync(
+                request,
+                cancellationSource.Token);
+            await Task.WhenAll(responseTask, serverTask);
+            using HttpResponseMessage response = await responseTask;
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+        finally
+        {
+            cancellationSource.Cancel();
+            listener.Stop();
+        }
+    }
+
+    [Fact]
     public async Task SendAsync_EarlyUnauthorizedResponse_RetriesUntouchedNonSeekableContent()
     {
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -58,6 +100,84 @@ public sealed class OAuthDelegatingHandlerIntegrationTests
             cancellationSource.Cancel();
             listener.Stop();
         }
+    }
+
+    private static async Task RunForbiddenFallbackServerAsync(
+        TcpListener listener,
+        int port,
+        CancellationToken cancellationToken)
+    {
+        await ExchangeAsync(
+            listener,
+            firstHeaders =>
+            {
+                Assert.StartsWith("GET /v2/repo/tags/list HTTP/1.1", firstHeaders);
+                Assert.Contains(
+                    "Authorization: Basic ",
+                    firstHeaders,
+                    StringComparison.OrdinalIgnoreCase);
+            },
+            "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            cancellationToken);
+
+        await ExchangeAsync(
+            listener,
+            anonymousHeaders =>
+            {
+                Assert.StartsWith("GET /v2/repo/tags/list HTTP/1.1", anonymousHeaders);
+                Assert.DoesNotContain(
+                    "Authorization:",
+                    anonymousHeaders,
+                    StringComparison.OrdinalIgnoreCase);
+            },
+            "HTTP/1.1 401 Unauthorized\r\n" +
+            $"WWW-Authenticate: {HttpBearerChallenge.Bearer} realm=\"http://127.0.0.1:{port}/token\",service=\"registry.example\",scope=\"repository:repo:pull\"\r\n" +
+            "Content-Length: 0\r\nConnection: close\r\n\r\n",
+            cancellationToken);
+
+        const string tokenResponse = """{"access_token":"access-token"}""";
+        await ExchangeAsync(
+            listener,
+            tokenHeaders =>
+            {
+                Assert.StartsWith("GET /token?", tokenHeaders);
+                Assert.Contains(
+                    "Authorization: Basic ",
+                    tokenHeaders,
+                    StringComparison.OrdinalIgnoreCase);
+            },
+            "HTTP/1.1 200 OK\r\n" +
+            $"Content-Length: {Encoding.UTF8.GetByteCount(tokenResponse)}\r\n" +
+            "Connection: close\r\n\r\n" +
+            tokenResponse,
+            cancellationToken);
+
+        await ExchangeAsync(
+            listener,
+            retryHeaders =>
+            {
+                Assert.StartsWith("GET /v2/repo/tags/list HTTP/1.1", retryHeaders);
+                Assert.Contains(
+                    "Authorization: Bearer ",
+                    retryHeaders,
+                    StringComparison.OrdinalIgnoreCase);
+            },
+            "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            cancellationToken);
+    }
+
+    private static async Task ExchangeAsync(
+        TcpListener listener,
+        Action<string> assertHeaders,
+        string response,
+        CancellationToken cancellationToken)
+    {
+        using TcpClient connection =
+            await listener.AcceptTcpClientAsync(cancellationToken);
+        await using NetworkStream stream = connection.GetStream();
+        string headers = await ReadHeadersAsync(stream, cancellationToken);
+        assertHeaders(headers);
+        await WriteResponseAsync(stream, response, cancellationToken);
     }
 
     private static async Task RunServerAsync(

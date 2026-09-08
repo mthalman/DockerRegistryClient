@@ -21,11 +21,30 @@ internal class OAuthDelegatingHandler : DelegatingHandler
 
         HttpResponseMessage response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
+        if (request.Headers.Authorization is not null &&
+            response.StatusCode == HttpStatusCode.Forbidden)
+        {
+            // Some registries only return a bearer challenge after an anonymous request.
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                HttpRequestReplayPolicy.PrepareForReplay(request);
+            }
+            finally
+            {
+                response.Dispose();
+            }
+
+            request.Headers.Authorization = null;
+            response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
             HttpBearerChallenge challenge;
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 challenge = GetOAuthChallenge(response);
                 HttpRequestReplayPolicy.PrepareForReplay(request);
             }
@@ -40,13 +59,6 @@ internal class OAuthDelegatingHandler : DelegatingHandler
                 authorization,
                 cancellationToken).ConfigureAwait(false);
             response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        }
-        else if (authorization is not null && response.StatusCode == HttpStatusCode.Forbidden)
-        {
-            // Not all registries will return 401 if Authorization is provided which requires an OAuth challenge.
-            // For example, ghcr.io will return a 403 in that case and won't return a challenge. In such cases,
-            // set the Authorization header to null and attempt again.
-            request.Headers.Authorization = null;
         }
 
         return response;
