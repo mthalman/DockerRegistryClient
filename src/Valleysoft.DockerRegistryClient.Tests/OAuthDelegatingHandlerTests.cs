@@ -10,6 +10,242 @@ namespace Valleysoft.DockerRegistryClient.Tests;
 public class OAuthDelegatingHandlerTests
 {
     [Fact]
+    public async Task SendAsync_AuthorizedForbidden_RetriesAnonymouslyAndCompletesBearerChallenge()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var forbiddenContent = new TrackingContent("forbidden");
+        innerHandler.AddExpectedRequest(
+            request => request.Headers.Authorization?.Scheme == "Basic" &&
+                request.Headers.Authorization?.Parameter == "credentials",
+            new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = forbiddenContent
+            });
+        var challengeContent = new TrackingContent("challenge");
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = challengeContent
+        };
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer",
+            "realm=\"https://auth.example/token\",service=\"registry.example\",scope=\"repository:repo:pull\""));
+        innerHandler.AddExpectedRequest(
+            request => forbiddenContent.IsDisposed &&
+                request.Headers.Authorization is null,
+            unauthorizedResponse);
+        innerHandler.AddExpectedRequest(
+            request => challengeContent.IsDisposed &&
+                request.RequestUri?.Host == "auth.example" &&
+                request.Headers.Authorization?.Scheme == "Basic" &&
+                request.Headers.Authorization?.Parameter == "credentials",
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"access_token":"access-token"}""")
+            });
+        innerHandler.AddExpectedRequest(
+            request => request.Headers.Authorization?.Scheme == "Bearer" &&
+                request.Headers.Authorization?.Parameter == "access-token",
+            new HttpResponseMessage(HttpStatusCode.OK));
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "https://registry.example/v2/repo/tags/list");
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Basic", "credentials");
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(forbiddenContent.IsDisposed);
+        Assert.True(challengeContent.IsDisposed);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_AuthorizedForbiddenTwice_ReturnsSecondForbidden()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var firstContent = new TrackingContent("first");
+        innerHandler.AddExpectedRequest(
+            request => request.Headers.Authorization is not null,
+            new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = firstContent
+            });
+        var secondContent = new TrackingContent("second");
+        innerHandler.AddExpectedRequest(
+            request => firstContent.IsDisposed &&
+                request.Headers.Authorization is null,
+            new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = secondContent
+            });
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "https://registry.example/v2/repo/tags/list");
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Basic", "credentials");
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.True(firstContent.IsDisposed);
+        Assert.False(secondContent.IsDisposed);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_AnonymousForbidden_DoesNotRetry()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        innerHandler.AddExpectedRequest(
+            request => request.Headers.Authorization is null,
+            new HttpResponseMessage(HttpStatusCode.Forbidden));
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+
+        using HttpResponseMessage response =
+            await client.GetAsync("https://registry.example/v2/repo/tags/list");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_RedirectedAnonymousForbidden_DoesNotRetry()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var redirectResponse = new HttpResponseMessage(HttpStatusCode.Redirect);
+        redirectResponse.Headers.Location =
+            new Uri("https://storage.example/blob");
+        innerHandler.AddExpectedRequest(
+            request =>
+                request.RequestUri == new Uri("https://registry.example/v2/blob") &&
+                request.Headers.Authorization is not null,
+            redirectResponse);
+        var forbiddenContent = new TrackingContent("forbidden");
+        innerHandler.AddExpectedRequest(
+            request =>
+                request.RequestUri == new Uri("https://storage.example/blob") &&
+                request.Headers.Authorization is null,
+            new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = forbiddenContent
+            });
+        using var client = new HttpClient(
+            new OAuthDelegatingHandler(
+                new RedirectDelegatingHandler(innerHandler)));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "https://registry.example/v2/blob");
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Basic", "credentials");
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.False(forbiddenContent.IsDisposed);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_CanceledAfterAuthorizedForbidden_DoesNotRetry()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        using var cancellationSource = new CancellationTokenSource();
+        var forbiddenContent = new TrackingContent("forbidden");
+        innerHandler.AddExpectedRequest(
+            request =>
+            {
+                cancellationSource.Cancel();
+                return request.Headers.Authorization is not null;
+            },
+            new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = forbiddenContent
+            });
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "https://registry.example/v2/repo/tags/list");
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Basic", "credentials");
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => client.SendAsync(request, cancellationSource.Token));
+
+        Assert.True(forbiddenContent.IsDisposed);
+        Assert.NotNull(request.Headers.Authorization);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_CanceledAfterAuthorizedForbiddenWithConsumedNonSeekableContent_ThrowsCancellation()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        using var cancellationSource = new CancellationTokenSource();
+        var forbiddenContent = new TrackingContent("forbidden");
+        innerHandler.AddExpectedRequest(
+            request =>
+            {
+                _ = ReadContent(request.Content!);
+                cancellationSource.Cancel();
+                return true;
+            },
+            new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = forbiddenContent
+            });
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var stream = new NonSeekableReadStream([1, 2, 3]);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/v2/repo/blobs/uploads/id")
+        {
+            Content = new ReplayableStreamContent(stream)
+        };
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Basic", "credentials");
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => client.SendAsync(request, cancellationSource.Token));
+
+        Assert.True(forbiddenContent.IsDisposed);
+        Assert.NotNull(request.Headers.Authorization);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_AuthorizedForbiddenWithNonReplayableContent_ThrowsBeforeRetry()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var forbiddenContent = new TrackingContent("forbidden");
+        innerHandler.AddExpectedRequest(
+            _ => true,
+            new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = forbiddenContent
+            });
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/v2/repo/blobs/uploads/id")
+        {
+            Content = new StreamContent(new MemoryStream([1, 2, 3]))
+        };
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Basic", "credentials");
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => client.SendAsync(request));
+
+        Assert.Contains("cannot be safely replayed", exception.Message);
+        Assert.True(forbiddenContent.IsDisposed);
+        Assert.NotNull(request.Headers.Authorization);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
     public async Task SendAsync_BearerChallenge_GetsTokenAndRetriesRequest()
     {
         var innerHandler = new MockHttpMessageHandler();
@@ -216,6 +452,45 @@ public class OAuthDelegatingHandlerTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => httpClient.SendAsync(request, cancellationSource.Token));
+
+        Assert.True(challengeContent.IsDisposed);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_CanceledAfterUnauthorizedWithConsumedNonSeekableContent_ThrowsCancellation()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        using var cancellationSource = new CancellationTokenSource();
+        var challengeContent = new TrackingContent("challenge");
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = challengeContent
+        };
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer",
+            "realm=\"https://auth.example/token\",service=\"registry.example\",scope=\"repository:repo:push\""));
+        innerHandler.AddExpectedRequest(
+            request =>
+            {
+                _ = ReadContent(request.Content!);
+                cancellationSource.Cancel();
+                return true;
+            },
+            unauthorizedResponse);
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var stream = new NonSeekableReadStream([1, 2, 3]);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/v2/repo/blobs/uploads/id")
+        {
+            Content = new ReplayableStreamContent(stream)
+        };
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Basic", "credentials");
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => client.SendAsync(request, cancellationSource.Token));
 
         Assert.True(challengeContent.IsDisposed);
         Assert.Equal(0, innerHandler.RemainingRequestCount);
