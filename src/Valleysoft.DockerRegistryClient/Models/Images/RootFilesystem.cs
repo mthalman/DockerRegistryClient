@@ -13,7 +13,7 @@ public class RootFilesystem
     [JsonPropertyName("type")]
     public string Type { get; set; } = string.Empty;
 
-    // <summary>
+    /// <summary>
     /// An array of layer content hashes, in order from first to last.
     /// </summary>
     [JsonPropertyName("diff_ids")]

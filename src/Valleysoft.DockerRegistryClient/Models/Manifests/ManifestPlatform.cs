@@ -2,6 +2,9 @@
 
 namespace Valleysoft.DockerRegistryClient.Models.Manifests;
 
+/// <summary>
+/// Describes the operating system and CPU requirements of a manifest.
+/// </summary>
 public class ManifestPlatform
 {
     /// <summary>

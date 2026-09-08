@@ -6,32 +6,85 @@ using Valleysoft.DockerRegistryClient.Models;
 
 namespace Valleysoft.DockerRegistryClient;
 
+/// <summary>
+/// Provides access to Docker Registry HTTP API and OCI Distribution API operations.
+/// </summary>
 public class RegistryClient : IDisposable
 {
     private readonly bool disposeHttpClient;
     private const string XmlMediaType = "application/xml";
 
+    /// <summary>
+    /// Gets the registry host and non-default port, without a URI scheme.
+    /// </summary>
     public string Registry { get; }
+
+    /// <summary>
+    /// Gets the registry's absolute base URI.
+    /// </summary>
     public Uri BaseUri { get; }
+
+    /// <summary>
+    /// Gets the blob operations.
+    /// </summary>
     public IBlobOperations Blobs { get; }
+
+    /// <summary>
+    /// Gets the repository catalog operations.
+    /// </summary>
     public ICatalogOperations Catalog { get; }
+
+    /// <summary>
+    /// Gets the repository tag operations.
+    /// </summary>
     public ITagOperations Tags { get; }
+
+    /// <summary>
+    /// Gets the manifest operations.
+    /// </summary>
     public IManifestOperations Manifests { get; }
+
+    /// <summary>
+    /// Gets the OCI referrer operations.
+    /// </summary>
     public IReferrerOperations Referrers { get; }
+
+    /// <summary>
+    /// Gets the HTTP client used for registry requests.
+    /// </summary>
     public HttpClient HttpClient { get; }
 
     private readonly IRegistryClientCredentials? credentials;
 
+    /// <summary>
+    /// Initializes a client that uses anonymous access and an internally managed HTTP client.
+    /// </summary>
+    /// <param name="registry">Registry host name or absolute base URI. HTTPS is used when no scheme is specified.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="registry"/> is <see langword="null"/>.</exception>
     public RegistryClient(string registry)
         : this(registry, serviceClientCredentials: null)
     {
     }
 
+    /// <summary>
+    /// Initializes a client with credentials and an internally managed HTTP client.
+    /// </summary>
+    /// <param name="registry">Registry host name or absolute base URI. HTTPS is used when no scheme is specified.</param>
+    /// <param name="serviceClientCredentials">Credentials applied to registry requests, or <see langword="null"/> for anonymous access.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="registry"/> is <see langword="null"/>.</exception>
     public RegistryClient(string registry, IRegistryClientCredentials? serviceClientCredentials)
         : this(registry, serviceClientCredentials, httpClient: null)
     {
     }
 
+    /// <summary>
+    /// Initializes a registry client with optional credentials and HTTP transport.
+    /// </summary>
+    /// <param name="registry">Registry host name or absolute base URI. HTTPS is used when no scheme is specified.</param>
+    /// <param name="serviceClientCredentials">Credentials applied to registry requests, or <see langword="null"/> for anonymous access.</param>
+    /// <param name="httpClient">HTTP client to use, or <see langword="null"/> to create a client with built-in bearer authentication and redirect handling.</param>
+    /// <param name="disposeHttpClient">Whether disposing this instance also disposes a supplied <paramref name="httpClient"/>. An internally created client is always disposed.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="registry"/> is <see langword="null"/>.</exception>
     public RegistryClient(string registry, IRegistryClientCredentials? serviceClientCredentials, HttpClient? httpClient, bool disposeHttpClient = false)
     {
         if (httpClient is null)
@@ -284,6 +337,9 @@ public class RegistryClient : IDisposable
         return null;
     }
 
+    /// <summary>
+    /// Releases the internally owned HTTP client, or a supplied client when ownership was requested.
+    /// </summary>
     public void Dispose()
     {
         if (this.disposeHttpClient)

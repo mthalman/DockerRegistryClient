@@ -6,17 +6,27 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <DebugType>portable</DebugType>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <EnableSourceLink>true</EnableSourceLink>
   </PropertyGroup>
 
   <PropertyGroup>
     <PackageId>Valleysoft.DockerRegistryClient</PackageId>
     <Title>Docker Registry Client</Title>
-    <Description>Client interface for executing commands on a Docker registry's HTTP API.</Description>
-    <PackageTags>docker</PackageTags>
+    <Description>A .NET client library for the OCI Distribution API and Docker Registry HTTP API V2.</Description>
+    <PackageTags>docker;registry;oci;distribution</PackageTags>
     <Authors>Matt Thalman and Contributors</Authors>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/mthalman/DockerRegistryClient</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <MinVerTagPrefix>v</MinVerTagPrefix>
   </PropertyGroup>
 
@@ -27,6 +37,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Valleysoft.DockerRegistryClient.Tests" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

@@ -2,6 +2,9 @@
 
 namespace Valleysoft.DockerRegistryClient.Models.Manifests.Docker;
 
+/// <summary>
+/// Describes a platform-specific manifest referenced by a Docker manifest list.
+/// </summary>
 public class ManifestReference : IManifestReference
 {
     /// <summary>
