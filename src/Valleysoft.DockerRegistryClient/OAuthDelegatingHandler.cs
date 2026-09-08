@@ -26,7 +26,7 @@ internal class OAuthDelegatingHandler : DelegatingHandler
             HttpBearerChallenge challenge;
             try
             {
-                challenge = GetBearerChallenge(response);
+                challenge = GetOAuthChallenge(response);
                 HttpRequestReplayPolicy.PrepareForReplay(request);
             }
             finally
@@ -66,25 +66,13 @@ internal class OAuthDelegatingHandler : DelegatingHandler
         return request;
     }
 
-    private static HttpBearerChallenge GetBearerChallenge(HttpResponseMessage response)
-    {
-        AuthenticationHeaderValue? bearerHeader = response.Headers.WwwAuthenticate
-            .AsEnumerable()
-            .FirstOrDefault(header => header.Scheme == HttpBearerChallenge.Bearer);
-        if (bearerHeader is null)
-        {
-            throw new AuthenticationException(
-                $"Bearer challenge not contained in unauthorized response from {response.RequestMessage?.RequestUri}");
-        }
-
-        return HttpBearerChallenge.Parse(bearerHeader.Parameter);
-    }
-
     private async Task<OAuthToken> GetOAuthTokenAsync(
         HttpBearerChallenge challenge,
         AuthenticationHeaderValue? authorization,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         HttpRequestMessage authenticateRequest;
         if (authorization is not null && authorization.Scheme == "Bearer")
         {
@@ -107,27 +95,39 @@ internal class OAuthDelegatingHandler : DelegatingHandler
             authenticateRequest.Headers.Authorization = authorization;
         }
 
-        using HttpRequestMessage requestToDispose = authenticateRequest;
-        cancellationToken.ThrowIfCancellationRequested();
-        using HttpResponseMessage authenticateResponse =
-            await base.SendAsync(authenticateRequest, cancellationToken).ConfigureAwait(false);
-        authenticateResponse.EnsureSuccessStatusCode();
+        using (authenticateRequest)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using HttpResponseMessage authenticateResponse =
+                await base.SendAsync(authenticateRequest, cancellationToken).ConfigureAwait(false);
+            authenticateResponse.EnsureSuccessStatusCode();
 
-        cancellationToken.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
 
 #if NET5_0_OR_GREATER
-        string tokenContent = await authenticateResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            string tokenContent = await authenticateResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #else
-        string tokenContent = await authenticateResponse.Content.ReadAsStringAsync().ConfigureAwait(false);
+            string tokenContent = await authenticateResponse.Content.ReadAsStringAsync().ConfigureAwait(false);
 #endif
 
-        try
-        {
-            return JsonSerializer.Deserialize<OAuthToken>(tokenContent) ?? throw new JsonException($"Unable to deserialize response:{Environment.NewLine}{tokenContent}");
+            try
+            {
+                return JsonSerializer.Deserialize<OAuthToken>(tokenContent) ?? throw new JsonException($"Unable to deserialize response:{Environment.NewLine}{tokenContent}");
+            }
+            catch (JsonException e)
+            {
+                throw new JsonException($"Unable to deserialize the response:{Environment.NewLine}{tokenContent}", e);
+            }
         }
-        catch (JsonException e)
-        {
-            throw new JsonException($"Unable to deserialize the response:{Environment.NewLine}{tokenContent}", e);
-        }
+    }
+
+    private static HttpBearerChallenge GetOAuthChallenge(HttpResponseMessage response)
+    {
+        AuthenticationHeaderValue? bearerHeader = response.Headers.WwwAuthenticate
+            .AsEnumerable()
+            .FirstOrDefault(header => header.Scheme == HttpBearerChallenge.Bearer) ??
+                throw new AuthenticationException(
+                    $"****** not contained in unauthorized response from {response.RequestMessage?.RequestUri}");
+        return HttpBearerChallenge.Parse(bearerHeader.Parameter);
     }
 }
