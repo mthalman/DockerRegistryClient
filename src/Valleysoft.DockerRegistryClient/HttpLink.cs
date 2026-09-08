@@ -146,6 +146,7 @@ internal class HttpLink
             if (!parameterName.Equals(RelationshipParameter, StringComparison.OrdinalIgnoreCase) ||
                 relationship is not null)
             {
+                // RFC 8288 requires recipients to ignore rel occurrences after the first.
                 continue;
             }
 

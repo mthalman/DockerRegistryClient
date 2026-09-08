@@ -280,6 +280,7 @@ public class RegistryClient : IDisposable
             }
 
             HttpLink[] nextLinks = links
+                // An anchor changes the link context; RFC 8288 forbids applying it as if absent.
                 .Where(link => link.Anchor is null && link.HasRelationship("next"))
                 .ToArray();
             if (nextLinks.Length == 0)

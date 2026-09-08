@@ -87,6 +87,7 @@ internal sealed class HttpHeaderValueParser
             return allowEmpty;
         }
 
+        // Rooted paths become absolute file URIs on Unix, so require the RFC scheme explicitly.
         if (uriKind == UriKind.Absolute && !HasUriScheme(value))
         {
             return false;
