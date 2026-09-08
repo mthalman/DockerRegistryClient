@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Authentication;
 using System.Text.Json;
@@ -18,15 +18,20 @@ internal class OAuthDelegatingHandler : DelegatingHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         AuthenticationHeaderValue? authorization = request.Headers.Authorization;
-        
+
         HttpResponseMessage response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
             HttpBearerChallenge challenge;
-            using (response)
+            try
             {
                 challenge = GetOAuthChallenge(response);
+                HttpRequestReplayPolicy.PrepareForReplay(request);
+            }
+            finally
+            {
+                response.Dispose();
             }
 
             request = await GetAuthenticatedRequestAsync(
@@ -122,7 +127,7 @@ internal class OAuthDelegatingHandler : DelegatingHandler
             .AsEnumerable()
             .FirstOrDefault(header => header.Scheme == HttpBearerChallenge.Bearer) ??
                 throw new AuthenticationException(
-                    $"Bearer challenge not contained in unauthorized response from {response.RequestMessage?.RequestUri}");
+                    $"****** not contained in unauthorized response from {response.RequestMessage?.RequestUri}");
         return HttpBearerChallenge.Parse(bearerHeader.Parameter);
     }
 }

@@ -67,6 +67,10 @@ internal sealed class RedirectDelegatingHandler : DelegatingHandler
                 request.Content = null;
                 request.Headers.TransferEncodingChunked = false;
             }
+            else
+            {
+                HttpRequestReplayPolicy.PrepareForReplay(request);
+            }
 
             response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
         }
