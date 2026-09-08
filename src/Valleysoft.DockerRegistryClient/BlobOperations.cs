@@ -166,7 +166,7 @@ internal class BlobOperations : IBlobOperations
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
     /// <remarks>
     /// This method estabilishes authentication for the upload process and generates the upload UUID.
-    /// This primitive method can be used over the <see cref="UploadAsync"/> convenience method when you need to have greater control over
+    /// This primitive method can be used over the <see cref="BlobOperationsExtensions.UploadAsync(IBlobOperations, string, Stream, string, CancellationToken)"/> convenience method when you need to have greater control over
     /// the upload process, such as breaking up the upload into multiple requests to allow for smaller chunks of the data to be retried if the
     /// upload fails.
     /// </remarks>
@@ -253,7 +253,7 @@ internal class BlobOperations : IBlobOperations
     /// <remarks>
     /// This method is typically used when needing to break up the overall blob data into smaller chunks. It would be called for each
     /// chunk of the data. The final chunk of the data can be sent via the <see cref="EndUploadAsync"/> method.
-    /// This primitive method can be used over the <see cref="UploadAsync"/> convenience method when you need to have greater control over
+    /// This primitive method can be used over the <see cref="BlobOperationsExtensions.UploadAsync(IBlobOperations, string, Stream, string, CancellationToken)"/> convenience method when you need to have greater control over
     /// the upload process, such as breaking up the upload into multiple requests to allow for smaller chunks of the data to be retried if the
     /// upload fails.
     /// </remarks>
@@ -286,7 +286,7 @@ internal class BlobOperations : IBlobOperations
     /// <remarks>
     /// This method allows you to optionally provide the final (or only) stream of data for the blob. If the stream isn't provided in this method,
     /// it needs to have been done so via the <see cref="SendUploadStreamAsync"/> method.
-    /// This primitive method can be used over the <see cref="UploadAsync"/> convenience method when you need to have greater control over
+    /// This primitive method can be used over the <see cref="BlobOperationsExtensions.UploadAsync(IBlobOperations, string, Stream, string, CancellationToken)"/> convenience method when you need to have greater control over
     /// the upload process, such as breaking up the upload into multiple requests to allow for smaller chunks of the data to be retried if the
     /// upload fails.
     /// </remarks>

@@ -1,7 +1,15 @@
 namespace Valleysoft.DockerRegistryClient;
 
+/// <summary>
+/// Describes a published manifest.
+/// </summary>
 public class ManifestPublishResult
 {
+    /// <summary>
+    /// Initializes a manifest publication result.
+    /// </summary>
+    /// <param name="location">Manifest location returned by the registry.</param>
+    /// <param name="digest">Canonical digest returned by the registry, or <see langword="null"/> when omitted.</param>
     public ManifestPublishResult(string location, string? digest)
     {
         Location = location;

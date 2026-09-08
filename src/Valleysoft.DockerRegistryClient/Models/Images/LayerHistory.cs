@@ -2,6 +2,9 @@
 
 namespace Valleysoft.DockerRegistryClient.Models.Images;
 
+/// <summary>
+/// Describes one entry in an image configuration's build history.
+/// </summary>
 public class LayerHistory
 {
     /// <summary>

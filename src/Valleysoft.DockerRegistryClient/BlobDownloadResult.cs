@@ -5,6 +5,14 @@ namespace Valleysoft.DockerRegistryClient;
 /// </summary>
 public class BlobDownloadResult
 {
+    /// <summary>
+    /// Initializes a result for a blob download response.
+    /// </summary>
+    /// <param name="content">Response content. Disposing the stream also disposes the underlying HTTP response.</param>
+    /// <param name="isRangeHonored">Whether the registry honored the requested range.</param>
+    /// <param name="rangeStart">Inclusive starting offset of the returned content, when known.</param>
+    /// <param name="rangeEnd">Inclusive ending offset of the returned content, when known.</param>
+    /// <param name="totalLength">Total blob length, when provided by the registry.</param>
     public BlobDownloadResult(
         Stream content,
         bool isRangeHonored,

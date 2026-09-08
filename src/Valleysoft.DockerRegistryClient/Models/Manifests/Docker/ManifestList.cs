@@ -7,6 +7,9 @@ namespace Valleysoft.DockerRegistryClient.Models.Manifests.Docker;
 /// </summary>
 public class ManifestList : Manifest, IManifestList
 {
+    /// <summary>
+    /// Initializes a Docker schema 2 manifest list.
+    /// </summary>
     public ManifestList()
     {
         MediaType = ManifestMediaTypes.DockerManifestList;

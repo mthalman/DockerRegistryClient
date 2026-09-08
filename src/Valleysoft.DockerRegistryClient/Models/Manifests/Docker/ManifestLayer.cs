@@ -2,6 +2,9 @@
 
 namespace Valleysoft.DockerRegistryClient.Models.Manifests.Docker;
 
+/// <summary>
+/// Describes a filesystem layer referenced by a Docker image manifest.
+/// </summary>
 public class ManifestLayer : IDescriptor
 {
     /// <summary>

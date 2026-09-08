@@ -2,6 +2,9 @@
 
 namespace Valleysoft.DockerRegistryClient.Models.Manifests.Oci;
 
+/// <summary>
+/// Describes a platform-specific manifest referenced by an OCI image index.
+/// </summary>
 public class ManifestReference : OciDescriptor, IManifestReference
 {
     /// <summary>

@@ -7,6 +7,9 @@ namespace Valleysoft.DockerRegistryClient.Models.Manifests.Docker;
 /// </summary>
 public class DockerManifest : Manifest, IImageManifest
 {
+    /// <summary>
+    /// Initializes a Docker schema 2 image manifest.
+    /// </summary>
     public DockerManifest()
     {
         MediaType = ManifestMediaTypes.DockerManifestSchema2;
