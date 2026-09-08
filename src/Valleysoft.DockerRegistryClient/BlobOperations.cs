@@ -579,10 +579,10 @@ internal class BlobOperations : IBlobOperations
 #endif
     }
 
-    private static StreamContent CreateStreamContent(Stream stream)
+    private static HttpContent CreateStreamContent(Stream stream)
     {
-        StreamContent streamContent = new(stream);
-        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-        return streamContent;
+        HttpContent content = new ReplayableStreamContent(stream);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        return content;
     }
 }

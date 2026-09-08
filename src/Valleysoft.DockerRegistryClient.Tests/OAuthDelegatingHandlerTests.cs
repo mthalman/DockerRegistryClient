@@ -12,7 +12,11 @@ public class OAuthDelegatingHandlerTests
     public async Task SendAsync_BearerChallenge_GetsTokenAndRetriesRequest()
     {
         var innerHandler = new MockHttpMessageHandler();
-        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        var unauthorizedContent = new DisposalTrackingContent();
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = unauthorizedContent
+        };
         unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
             "Bearer",
             "realm=\"https://auth.example/token\",service=\"registry.example\",scope=\"repository:repo:pull\""));
@@ -27,7 +31,8 @@ public class OAuthDelegatingHandlerTests
             request => request.Method == HttpMethod.Get &&
                 request.RequestUri?.Host == "auth.example" &&
                 request.RequestUri.Query.Contains("service=registry.example") &&
-                request.RequestUri.Query.Contains("scope=repository:repo:pull"),
+                request.RequestUri.Query.Contains("scope=repository:repo:pull") &&
+                unauthorizedContent.IsDisposed,
             new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("""{"access_token":"access-token"}""")
@@ -184,7 +189,251 @@ public class OAuthDelegatingHandlerTests
         Assert.Equal(0, innerHandler.RemainingRequestCount);
     }
 
-    private sealed class NestedRequestContent(Func<Task> sendNestedRequest) : HttpContent
+    [Fact]
+    public async Task SendAsync_Unauthorized_SeekableContentReplaysFromInitialPosition()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer",
+            "realm=\"https://auth.example/token\",service=\"registry.example\",scope=\"repository:repo:push\""));
+        innerHandler.AddExpectedRequest(
+            request => ReadContent(request.Content!).SequenceEqual(new byte[] { 2, 3, 4 }),
+            unauthorizedResponse);
+        innerHandler.AddExpectedRequest(
+            request => request.RequestUri?.Host == "auth.example",
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"access_token":"access-token"}""")
+            });
+        innerHandler.AddExpectedRequest(
+            request => ReadContent(request.Content!).SequenceEqual(new byte[] { 2, 3, 4 }),
+            new HttpResponseMessage(HttpStatusCode.OK));
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var stream = new MemoryStream([1, 2, 3, 4]);
+        stream.Position = 1;
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/upload")
+        {
+            Content = new ReplayableStreamContent(stream)
+        };
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_Unauthorized_NonSeekableContentThrowsBeforeRetry()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer",
+            "realm=\"https://auth.example/token\",service=\"registry.example\",scope=\"repository:repo:push\""));
+        innerHandler.AddExpectedRequest(
+            request => ReadContent(request.Content!).SequenceEqual(new byte[] { 1, 2, 3 }),
+            unauthorizedResponse);
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var stream = new NonSeekableReadStream([1, 2, 3]);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/upload")
+        {
+            Content = new ReplayableStreamContent(stream)
+        };
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => client.SendAsync(request));
+
+        Assert.Contains("non-seekable", exception.Message);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_Unauthorized_UnconsumedNonSeekableContentIsSentOnRetry()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer",
+            "realm=\"https://auth.example/token\",service=\"registry.example\",scope=\"repository:repo:push\""));
+        innerHandler.AddExpectedRequest(_ => true, unauthorizedResponse);
+        innerHandler.AddExpectedRequest(
+            request => request.RequestUri?.Host == "auth.example",
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"access_token":"access-token"}""")
+            });
+        innerHandler.AddExpectedRequest(
+            request => ReadContent(request.Content!).SequenceEqual(new byte[] { 1, 2, 3 }),
+            new HttpResponseMessage(HttpStatusCode.OK));
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var stream = new NonSeekableReadStream([1, 2, 3]);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/upload")
+        {
+            Content = new ReplayableStreamContent(stream)
+        };
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_Unauthorized_UnknownContentThrowsBeforeRetry()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        unauthorizedResponse.Content = new StringContent("unauthorized");
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer",
+            "realm=\"https://auth.example/token\",service=\"registry.example\",scope=\"repository:repo:push\""));
+        innerHandler.AddExpectedRequest(_ => true, unauthorizedResponse);
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/upload")
+        {
+            Content = new StreamContent(new MemoryStream([1, 2, 3]))
+        };
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => client.SendAsync(request));
+
+        Assert.Contains("cannot be safely replayed", exception.Message);
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => unauthorizedResponse.Content.ReadAsStringAsync());
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_Unauthorized_BufferedContentIsRetried()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer",
+            "realm=\"https://auth.example/token\",service=\"registry.example\",scope=\"repository:repo:push\""));
+        innerHandler.AddExpectedRequest(
+            request => ReadContent(request.Content!).SequenceEqual(new byte[] { 1, 2, 3 }),
+            unauthorizedResponse);
+        innerHandler.AddExpectedRequest(
+            request => request.RequestUri?.Host == "auth.example",
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"access_token":"access-token"}""")
+            });
+        innerHandler.AddExpectedRequest(
+            request => ReadContent(request.Content!).SequenceEqual(new byte[] { 1, 2, 3 }),
+            new HttpResponseMessage(HttpStatusCode.OK));
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/upload")
+        {
+            Content = new ByteArrayContent([1, 2, 3])
+        };
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_Unauthorized_ReadOnlyMemoryContentIsRetried()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer",
+            "realm=\"https://auth.example/token\",service=\"registry.example\",scope=\"repository:repo:push\""));
+        innerHandler.AddExpectedRequest(
+            request => ReadContent(request.Content!).SequenceEqual(new byte[] { 1, 2, 3 }),
+            unauthorizedResponse);
+        innerHandler.AddExpectedRequest(
+            request => request.RequestUri?.Host == "auth.example",
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"access_token":"access-token"}""")
+            });
+        innerHandler.AddExpectedRequest(
+            request => ReadContent(request.Content!).SequenceEqual(new byte[] { 1, 2, 3 }),
+            new HttpResponseMessage(HttpStatusCode.OK));
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/upload")
+        {
+            Content = new ReadOnlyMemoryContent(new byte[] { 1, 2, 3 })
+        };
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_Unauthorized_ByteArrayContentSubclassThrowsBeforeRetry()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer",
+            "realm=\"https://auth.example/token\",service=\"registry.example\",scope=\"repository:repo:push\""));
+        innerHandler.AddExpectedRequest(_ => true, unauthorizedResponse);
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/upload")
+        {
+            Content = new DerivedByteArrayContent([1, 2, 3])
+        };
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => client.SendAsync(request));
+
+        Assert.Contains("cannot be safely replayed", exception.Message);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_NonSeekableContentWithoutRetrySucceeds()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        innerHandler.AddExpectedRequest(
+            request => ReadContent(request.Content!).SequenceEqual(new byte[] { 1, 2, 3 }),
+            new HttpResponseMessage(HttpStatusCode.OK));
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var stream = new NonSeekableReadStream([1, 2, 3]);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/upload")
+        {
+            Content = new ReplayableStreamContent(stream)
+        };
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    private static byte[] ReadContent(HttpContent content)
+    {
+        using var stream = new MemoryStream();
+        content.CopyToAsync(stream).GetAwaiter().GetResult();
+        return stream.ToArray();
+    }
+
+    private sealed class NestedRequestContent(Func<Task> sendNestedRequest) : HttpContent, IReplayableHttpContent
     {
         protected override bool TryComputeLength(out long length)
         {
@@ -197,6 +446,34 @@ public class OAuthDelegatingHandlerTests
             TransportContext? context)
         {
             await sendNestedRequest();
+        }
+
+        public void PrepareForReplay()
+        {
+        }
+    }
+
+    private sealed class DerivedByteArrayContent(byte[] content) : ByteArrayContent(content);
+
+    private sealed class DisposalTrackingContent : HttpContent
+    {
+        public bool IsDisposed { get; private set; }
+
+        protected override Task SerializeToStreamAsync(
+            Stream stream,
+            TransportContext? context) =>
+            Task.CompletedTask;
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return true;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = disposing;
+            base.Dispose(disposing);
         }
     }
 }

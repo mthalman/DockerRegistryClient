@@ -3,7 +3,7 @@ using System.Net.Http.Headers;
 
 namespace Valleysoft.DockerRegistryClient;
 
-internal sealed class ReplayableBlobContent : HttpContent
+internal sealed class ReplayableBlobContent : HttpContent, IReplayableHttpContent
 {
     private const int BufferSize = 81920;
     private readonly BlobOperations source;
@@ -101,4 +101,8 @@ internal sealed class ReplayableBlobContent : HttpContent
 
     private InvalidOperationException CreateSizeMismatchException(long actualSize) =>
         new($"Blob '{digest}' has size {actualSize}, but its descriptor declares {size}.");
+
+    public void PrepareForReplay()
+    {
+    }
 }

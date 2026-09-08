@@ -138,6 +138,32 @@ public class RedirectDelegatingHandlerTests
         Assert.Equal(0, innerHandler.RemainingRequestCount);
     }
 
+    [Fact]
+    public async Task SendAsync_RedirectToGetDoesNotDisposeRemovedContent()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        innerHandler.AddExpectedRequest(
+            request => ReadContent(request.Content!).SequenceEqual(new byte[] { 1, 2, 3 }),
+            CreateRedirectResponse("/destination", HttpStatusCode.SeeOther));
+        innerHandler.AddExpectedRequest(
+            request => request.Method == HttpMethod.Get && request.Content is null,
+            new HttpResponseMessage(HttpStatusCode.OK));
+        using var client = new HttpClient(new RedirectDelegatingHandler(innerHandler));
+        var stream = new MemoryStream([1, 2, 3]);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/source")
+        {
+            Content = new ReplayableStreamContent(stream)
+        };
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(stream.CanRead);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
     [Theory]
     [InlineData("http://registry.example/destination")]
     [InlineData("ftp://registry.example/destination")]
@@ -196,6 +222,123 @@ public class RedirectDelegatingHandlerTests
         Assert.Equal(HttpStatusCode.TemporaryRedirect, response.StatusCode);
         Assert.Equal(new Uri("/51", UriKind.Relative), response.Headers.Location);
         Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Theory]
+    [InlineData(307)]
+    [InlineData(308)]
+    public async Task SendAsync_BodyPreservingRedirect_ReplaysSeekableContentFromInitialPosition(
+        int statusCode)
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        innerHandler.AddExpectedRequest(
+            request => ReadContent(request.Content!).SequenceEqual(new byte[] { 2, 3, 4 }),
+            CreateRedirectResponse("/destination", (HttpStatusCode)statusCode));
+        innerHandler.AddExpectedRequest(
+            request => ReadContent(request.Content!).SequenceEqual(new byte[] { 2, 3, 4 }),
+            new HttpResponseMessage(HttpStatusCode.OK));
+        using var client = new HttpClient(new RedirectDelegatingHandler(innerHandler));
+        using var stream = new MemoryStream([1, 2, 3, 4]);
+        stream.Position = 1;
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/source")
+        {
+            Content = new ReplayableStreamContent(stream)
+        };
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Theory]
+    [InlineData(307)]
+    [InlineData(308)]
+    public async Task SendAsync_BodyPreservingRedirect_NonSeekableContentThrowsBeforeRetry(
+        int statusCode)
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        HttpResponseMessage redirectResponse =
+            CreateRedirectResponse("/destination", (HttpStatusCode)statusCode);
+        redirectResponse.Content = new StringContent("redirect");
+        innerHandler.AddExpectedRequest(
+            request => ReadContent(request.Content!).SequenceEqual(new byte[] { 1, 2, 3 }),
+            redirectResponse);
+        using var client = new HttpClient(new RedirectDelegatingHandler(innerHandler));
+        using var stream = new NonSeekableReadStream([1, 2, 3]);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/source")
+        {
+            Content = new ReplayableStreamContent(stream)
+        };
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => client.SendAsync(request));
+
+        Assert.Contains("non-seekable", exception.Message);
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => redirectResponse.Content.ReadAsStringAsync());
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Theory]
+    [InlineData(307)]
+    [InlineData(308)]
+    public async Task SendAsync_BodyPreservingRedirect_UnconsumedNonSeekableContentIsSentOnRetry(
+        int statusCode)
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        innerHandler.AddExpectedRequest(
+            _ => true,
+            CreateRedirectResponse("/destination", (HttpStatusCode)statusCode));
+        innerHandler.AddExpectedRequest(
+            request => ReadContent(request.Content!).SequenceEqual(new byte[] { 1, 2, 3 }),
+            new HttpResponseMessage(HttpStatusCode.OK));
+        using var client = new HttpClient(new RedirectDelegatingHandler(innerHandler));
+        using var stream = new NonSeekableReadStream([1, 2, 3]);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/source")
+        {
+            Content = new ReplayableStreamContent(stream)
+        };
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_BodyPreservingRedirect_UnknownContentThrowsBeforeRetry()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        innerHandler.AddExpectedRequest(
+            _ => true,
+            CreateRedirectResponse("/destination"));
+        using var client = new HttpClient(new RedirectDelegatingHandler(innerHandler));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/source")
+        {
+            Content = new StreamContent(new MemoryStream([1, 2, 3]))
+        };
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => client.SendAsync(request));
+
+        Assert.Contains("cannot be safely replayed", exception.Message);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    private static byte[] ReadContent(HttpContent content)
+    {
+        using var stream = new MemoryStream();
+        content.CopyToAsync(stream).GetAwaiter().GetResult();
+        return stream.ToArray();
     }
 
     private static HttpResponseMessage CreateRedirectResponse(

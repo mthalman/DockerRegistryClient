@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Authentication;
 using System.Text.Json;
@@ -18,13 +18,24 @@ internal class OAuthDelegatingHandler : DelegatingHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         AuthenticationHeaderValue? authorization = request.Headers.Authorization;
-        
+
         HttpResponseMessage response = await base.SendAsync(request, cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
+            HttpBearerChallenge challenge;
+            try
+            {
+                challenge = GetBearerChallenge(response);
+                HttpRequestReplayPolicy.PrepareForReplay(request);
+            }
+            finally
+            {
+                response.Dispose();
+            }
+
             request = await GetAuthenticatedRequestAsync(
-                response,
+                challenge,
                 request,
                 authorization,
                 cancellationToken).ConfigureAwait(false);
@@ -42,29 +53,38 @@ internal class OAuthDelegatingHandler : DelegatingHandler
     }
 
     private async Task<HttpRequestMessage> GetAuthenticatedRequestAsync(
-        HttpResponseMessage response,
+        HttpBearerChallenge challenge,
         HttpRequestMessage request,
         AuthenticationHeaderValue? authorization,
         CancellationToken cancellationToken = default)
     {
         var authToken = await GetOAuthTokenAsync(
-            response,
+            challenge,
             authorization,
             cancellationToken).ConfigureAwait(false);
         request.Headers.Authorization = new AuthenticationHeaderValue(HttpBearerChallenge.Bearer, authToken.AccessToken ?? authToken.Token);
         return request;
     }
 
-    private async Task<OAuthToken> GetOAuthTokenAsync(
-        HttpResponseMessage response,
-        AuthenticationHeaderValue? authorization,
-        CancellationToken cancellationToken = default)
+    private static HttpBearerChallenge GetBearerChallenge(HttpResponseMessage response)
     {
         AuthenticationHeaderValue? bearerHeader = response.Headers.WwwAuthenticate
             .AsEnumerable()
-            .FirstOrDefault(header => header.Scheme == HttpBearerChallenge.Bearer) ?? throw new AuthenticationException($"Bearer header not contained in unauthorized response from {response.RequestMessage?.RequestUri}");
-        HttpBearerChallenge challenge = HttpBearerChallenge.Parse(bearerHeader.Parameter);
+            .FirstOrDefault(header => header.Scheme == HttpBearerChallenge.Bearer);
+        if (bearerHeader is null)
+        {
+            throw new AuthenticationException(
+                $"Bearer challenge not contained in unauthorized response from {response.RequestMessage?.RequestUri}");
+        }
 
+        return HttpBearerChallenge.Parse(bearerHeader.Parameter);
+    }
+
+    private async Task<OAuthToken> GetOAuthTokenAsync(
+        HttpBearerChallenge challenge,
+        AuthenticationHeaderValue? authorization,
+        CancellationToken cancellationToken = default)
+    {
         HttpRequestMessage authenticateRequest;
         if (authorization is not null && authorization.Scheme == "Bearer")
         {
@@ -87,16 +107,18 @@ internal class OAuthDelegatingHandler : DelegatingHandler
             authenticateRequest.Headers.Authorization = authorization;
         }
 
+        using HttpRequestMessage requestToDispose = authenticateRequest;
         cancellationToken.ThrowIfCancellationRequested();
-        response = await base.SendAsync(authenticateRequest, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        using HttpResponseMessage authenticateResponse =
+            await base.SendAsync(authenticateRequest, cancellationToken).ConfigureAwait(false);
+        authenticateResponse.EnsureSuccessStatusCode();
 
         cancellationToken.ThrowIfCancellationRequested();
 
 #if NET5_0_OR_GREATER
-        string tokenContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        string tokenContent = await authenticateResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #else
-        string tokenContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        string tokenContent = await authenticateResponse.Content.ReadAsStringAsync().ConfigureAwait(false);
 #endif
 
         try
