@@ -359,6 +359,53 @@ public class RegistryClientTests
     }
 
     [Fact]
+    public void GetPageResult_WithMultipleLinkValues_ReturnsSoleNextLink()
+    {
+        string responseBody = JsonSerializer.Serialize(
+            new { repositories = new[] { "repo1", "repo2" } });
+        using var response = new HttpResponseMessage(HttpStatusCode.OK);
+        response.Headers.TryAddWithoutValidation(
+            "Link",
+            [
+                "</v2/_catalog?n=2&last=repo0>; rel=\"prev\"",
+                "</v2/_catalog?n=2&last=repo2>; title=\"Next page\"; REL=\"alternate NEXT\""
+            ]);
+
+        Page<Catalog> result = RegistryClient.GetPageResult<Catalog>(response, responseBody);
+
+        Assert.Equal("/v2/_catalog?n=2&last=repo2", result.NextPageLink);
+    }
+
+    [Theory]
+    [InlineData("</previous>; rel=\"prev\", malformed")]
+    [InlineData("</first>; rel=\"next\", </second>; rel=\"NEXT\"")]
+    public void GetPageResult_WithInvalidOrAmbiguousLinkHeader_Throws(string linkHeader)
+    {
+        string responseBody = JsonSerializer.Serialize(
+            new { repositories = new[] { "repo1", "repo2" } });
+        using var response = new HttpResponseMessage(HttpStatusCode.OK);
+        response.Headers.TryAddWithoutValidation("Link", linkHeader);
+
+        Assert.Throws<InvalidOperationException>(
+            () => RegistryClient.GetPageResult<Catalog>(response, responseBody));
+    }
+
+    [Fact]
+    public void GetPageResult_WithoutApplicableNextLink_ReturnsNull()
+    {
+        string responseBody = JsonSerializer.Serialize(
+            new { repositories = new[] { "repo1", "repo2" } });
+        using var response = new HttpResponseMessage(HttpStatusCode.OK);
+        response.Headers.TryAddWithoutValidation(
+            "Link",
+            "</previous>; rel=\"prev\", </anchored>; anchor=\"https://other.example/list\"; rel=\"next\"");
+
+        Page<Catalog> result = RegistryClient.GetPageResult<Catalog>(response, responseBody);
+
+        Assert.Null(result.NextPageLink);
+    }
+
+    [Fact]
     public async Task GetResult_ValidJson_DeserializesCorrectly()
     {
         var mockHandler = new MockHttpMessageHandler();

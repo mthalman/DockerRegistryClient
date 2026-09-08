@@ -62,6 +62,42 @@ public class OAuthDelegatingHandlerTests
     }
 
     [Fact]
+    public async Task SendAsync_BearerChallengeWithOnlyRealm_OmitsOptionalQueryParameters()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "bearer",
+            "REALM=\"https://auth.example/token\""));
+        innerHandler.AddExpectedRequest(_ => true, unauthorizedResponse);
+        innerHandler.AddExpectedRequest(
+            request =>
+                request.Method == HttpMethod.Get &&
+                request.RequestUri == new Uri("https://auth.example/token") &&
+                request.Headers.Authorization?.Scheme == "Basic",
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"token":"access-token"}""")
+            });
+        innerHandler.AddExpectedRequest(
+            request =>
+                request.Headers.Authorization?.Scheme == "Bearer" &&
+                request.Headers.Authorization?.Parameter == "access-token",
+            new HttpResponseMessage(HttpStatusCode.OK));
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "https://registry.example/v2/repo/tags/list");
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Basic", "credentials");
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
     public async Task SendAsync_AuthorizedForbiddenTwice_ReturnsSecondForbidden()
     {
         var innerHandler = new MockHttpMessageHandler();
@@ -270,7 +306,7 @@ public class OAuthDelegatingHandlerTests
                 request.Method == HttpMethod.Get &&
                 request.RequestUri?.Host == "auth.example" &&
                 request.RequestUri.Query.Contains("service=registry.example") &&
-                request.RequestUri.Query.Contains("scope=repository:repo:pull"),
+                request.RequestUri.Query.Contains("scope=repository%3Arepo%3Apull"),
             new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = tokenContent

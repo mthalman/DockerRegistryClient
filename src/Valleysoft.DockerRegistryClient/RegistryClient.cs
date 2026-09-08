@@ -266,19 +266,34 @@ public class RegistryClient : IDisposable
     {
         if (response.Headers.TryGetValues("Link", out IEnumerable<string>? linkValues))
         {
-            HttpLink? nextLink = linkValues
-                .Select(linkValue =>
+            string[] values = linkValues.ToArray();
+            var links = new List<HttpLink>();
+            foreach (string linkValue in values)
+            {
+                if (!HttpLink.TryParseList(linkValue, out IReadOnlyList<HttpLink>? parsedLinks))
                 {
-                    if (HttpLink.TryParse(linkValue, out HttpLink? httpLink))
-                    {
-                        return httpLink;
-                    }
+                    throw new InvalidOperationException(
+                        $"Unable to parse link header '{string.Join(", ", values)}'");
+                }
 
-                    return null;
-                })
-                .FirstOrDefault(link => link?.Relationship == "next") ??
-                    throw new InvalidOperationException($"Unable to parse link header '{string.Join(", ", linkValues.ToArray())}'");
-            return nextLink.Url;
+                links.AddRange(parsedLinks!);
+            }
+
+            HttpLink[] nextLinks = links
+                .Where(link => link.Anchor is null && link.HasRelationship("next"))
+                .ToArray();
+            if (nextLinks.Length == 0)
+            {
+                return null;
+            }
+
+            if (nextLinks.Length > 1)
+            {
+                throw new InvalidOperationException(
+                    $"Link header contains multiple next links: '{string.Join(", ", values)}'");
+            }
+
+            return nextLinks[0].Url;
         }
 
         return null;

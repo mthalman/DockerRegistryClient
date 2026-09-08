@@ -86,23 +86,26 @@ internal class OAuthDelegatingHandler : DelegatingHandler
         cancellationToken.ThrowIfCancellationRequested();
 
         HttpRequestMessage authenticateRequest;
-        if (authorization is not null && authorization.Scheme == "Bearer")
+        if (authorization is not null &&
+            authorization.Scheme.Equals(HttpBearerChallenge.Bearer, StringComparison.OrdinalIgnoreCase))
         {
+            var formValues = new Dictionary<string, string>
+            {
+                { "client_id", "registry-client" },
+                { "grant_type", "refresh_token" },
+                { "refresh_token", authorization.Parameter ?? string.Empty },
+            };
+            AddOptionalParameter(formValues, "scope", challenge.Scope);
+            AddOptionalParameter(formValues, "service", challenge.Service);
+
             authenticateRequest = new(HttpMethod.Post, challenge.Realm)
             {
-                Content = new FormUrlEncodedContent(new Dictionary<string, string>
-                {
-                    { "client_id", "registry-client" },
-                    { "grant_type", "refresh_token" },
-                    { "refresh_token", authorization.Parameter ?? string.Empty },
-                    { "scope", challenge.Scope },
-                    { "service", challenge.Service },
-                })
+                Content = new FormUrlEncodedContent(formValues)
             };
         }
         else
         {
-            Uri authenticateUri = new($"{challenge.Realm}?service={challenge.Service}&scope={challenge.Scope}");
+            Uri authenticateUri = CreateAuthenticationUri(challenge);
             authenticateRequest = new(HttpMethod.Get, authenticateUri);
             authenticateRequest.Headers.Authorization = authorization;
         }
@@ -133,11 +136,50 @@ internal class OAuthDelegatingHandler : DelegatingHandler
         }
     }
 
+    private static void AddOptionalParameter(
+        IDictionary<string, string> parameters,
+        string name,
+        string? value)
+    {
+        if (value is not null)
+        {
+            parameters.Add(name, value);
+        }
+    }
+
+    private static Uri CreateAuthenticationUri(HttpBearerChallenge challenge)
+    {
+        var builder = new UriBuilder(challenge.Realm);
+        var queryParts = new List<string>();
+
+        if (builder.Query.Length > 1)
+        {
+            queryParts.Add(builder.Query.Substring(1));
+        }
+
+        AddOptionalQueryParameter(queryParts, "service", challenge.Service);
+        AddOptionalQueryParameter(queryParts, "scope", challenge.Scope);
+        builder.Query = string.Join("&", queryParts);
+        return builder.Uri;
+    }
+
+    private static void AddOptionalQueryParameter(
+        ICollection<string> queryParts,
+        string name,
+        string? value)
+    {
+        if (value is not null)
+        {
+            queryParts.Add($"{Uri.EscapeDataString(name)}={Uri.EscapeDataString(value)}");
+        }
+    }
+
     private static HttpBearerChallenge GetOAuthChallenge(HttpResponseMessage response)
     {
         AuthenticationHeaderValue? bearerHeader = response.Headers.WwwAuthenticate
             .AsEnumerable()
-            .FirstOrDefault(header => header.Scheme == HttpBearerChallenge.Bearer) ??
+            .FirstOrDefault(header =>
+                header.Scheme.Equals(HttpBearerChallenge.Bearer, StringComparison.OrdinalIgnoreCase)) ??
                 throw new AuthenticationException(
                     $"****** not contained in unauthorized response from {response.RequestMessage?.RequestUri}");
         return HttpBearerChallenge.Parse(bearerHeader.Parameter);
