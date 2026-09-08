@@ -141,7 +141,7 @@ internal class OAuthDelegatingHandler : DelegatingHandler
         string name,
         string? value)
     {
-        if (!string.IsNullOrEmpty(value))
+        if (value is not null && value.Length > 0)
         {
             parameters.Add(name, value);
         }
@@ -168,7 +168,7 @@ internal class OAuthDelegatingHandler : DelegatingHandler
         string name,
         string? value)
     {
-        if (!string.IsNullOrEmpty(value))
+        if (value is not null && value.Length > 0)
         {
             queryParts.Add($"{Uri.EscapeDataString(name)}={Uri.EscapeDataString(value)}");
         }
