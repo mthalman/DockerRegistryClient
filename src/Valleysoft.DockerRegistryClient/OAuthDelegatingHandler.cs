@@ -19,7 +19,7 @@ internal class OAuthDelegatingHandler : DelegatingHandler
     {
         AuthenticationHeaderValue? authorization = request.Headers.Authorization;
 
-        HttpResponseMessage response = await base.SendAsync(request, cancellationToken);
+        HttpResponseMessage response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
