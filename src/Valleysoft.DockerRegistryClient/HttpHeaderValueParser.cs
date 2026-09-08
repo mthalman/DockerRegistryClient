@@ -87,6 +87,11 @@ internal sealed class HttpHeaderValueParser
             return allowEmpty;
         }
 
+        if (uriKind == UriKind.Absolute && !HasUriScheme(value))
+        {
+            return false;
+        }
+
         for (int index = 0; index < value.Length; index++)
         {
             char character = value[index];
@@ -108,6 +113,32 @@ internal sealed class HttpHeaderValueParser
         }
 
         return Uri.TryCreate(value, uriKind, out _);
+    }
+
+    private static bool HasUriScheme(string value)
+    {
+        if (!IsAsciiLetter(value[0]))
+        {
+            return false;
+        }
+
+        for (int index = 1; index < value.Length; index++)
+        {
+            char character = value[index];
+            if (character == ':')
+            {
+                return true;
+            }
+
+            if (!IsAsciiLetter(character) &&
+                character is not (>= '0' and <= '9') &&
+                character is not '+' and not '-' and not '.')
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     private bool TryReadQuotedString(out string parsedValue)
@@ -166,6 +197,9 @@ internal sealed class HttpHeaderValueParser
         value is >= '0' and <= '9' ||
         value is >= 'a' and <= 'f' ||
         value is >= 'A' and <= 'F';
+
+    private static bool IsAsciiLetter(char value) =>
+        value is >= 'a' and <= 'z' || value is >= 'A' and <= 'Z';
 
     private static bool IsQuotedTextCharacter(char value) =>
         value == '\t' ||
