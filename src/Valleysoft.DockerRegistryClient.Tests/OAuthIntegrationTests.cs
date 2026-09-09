@@ -33,7 +33,7 @@ public sealed class OAuthIntegrationTests
                 Assert.Equal("GET", request.Method);
                 Assert.StartsWith("/token?", request.Target);
                 Assert.Contains("service=registry.example", request.Target);
-                Assert.Contains("scope=registry:catalog:*", request.Target);
+                Assert.Contains("scope=registry%3Acatalog%3A%2A", request.Target);
                 Assert.False(request.Headers.ContainsKey("Authorization"));
             },
             request => AssertCatalogRequest(request, "Bearer access-token"));

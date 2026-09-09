@@ -62,6 +62,42 @@ public class OAuthDelegatingHandlerTests
     }
 
     [Fact]
+    public async Task SendAsync_BearerChallengeWithEmptyOptionalParameters_OmitsThemFromQuery()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "bearer",
+            "REALM=\"https://auth.example/token\",service=\"\",scope=\"\""));
+        innerHandler.AddExpectedRequest(_ => true, unauthorizedResponse);
+        innerHandler.AddExpectedRequest(
+            request =>
+                request.Method == HttpMethod.Get &&
+                request.RequestUri == new Uri("https://auth.example/token") &&
+                request.Headers.Authorization?.Scheme == "Basic",
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"token":"access-token"}""")
+            });
+        innerHandler.AddExpectedRequest(
+            request =>
+                request.Headers.Authorization?.Scheme == "Bearer" &&
+                request.Headers.Authorization?.Parameter == "access-token",
+            new HttpResponseMessage(HttpStatusCode.OK));
+        using var client = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "https://registry.example/v2/repo/tags/list");
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Basic", "credentials");
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
     public async Task SendAsync_AuthorizedForbiddenTwice_ReturnsSecondForbidden()
     {
         var innerHandler = new MockHttpMessageHandler();
@@ -270,7 +306,7 @@ public class OAuthDelegatingHandlerTests
                 request.Method == HttpMethod.Get &&
                 request.RequestUri?.Host == "auth.example" &&
                 request.RequestUri.Query.Contains("service=registry.example") &&
-                request.RequestUri.Query.Contains("scope=repository:repo:pull"),
+                request.RequestUri.Query.Contains("scope=repository%3Arepo%3Apull"),
             new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = tokenContent
@@ -344,6 +380,48 @@ public class OAuthDelegatingHandlerTests
         Assert.Contains("scope=repository%3Arepo%3Apush", tokenRequestBody);
         await Assert.ThrowsAsync<ObjectDisposedException>(
             () => tokenRequest!.Content!.ReadAsStringAsync());
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_RefreshTokenChallengeWithEmptyOptionalParameters_OmitsThemFromForm()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer",
+            "realm=\"https://auth.example/token\",service=\"\",scope=\"\""));
+        innerHandler.AddExpectedRequest(
+            request => request.Headers.Authorization?.Parameter == "refresh-token",
+            unauthorizedResponse);
+
+        string? tokenRequestBody = null;
+        innerHandler.AddExpectedRequest(
+            request =>
+            {
+                tokenRequestBody = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+                return request.Method == HttpMethod.Post &&
+                    request.RequestUri == new Uri("https://auth.example/token");
+            },
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"token":"access-token"}""")
+            });
+        innerHandler.AddExpectedRequest(
+            request => request.Headers.Authorization?.Parameter == "access-token",
+            new HttpResponseMessage(HttpStatusCode.OK));
+
+        using var httpClient = new HttpClient(new OAuthDelegatingHandler(innerHandler));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            "https://registry.example/v2/repo/blobs/uploads/id");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "refresh-token");
+
+        using HttpResponseMessage response = await httpClient.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.DoesNotContain("scope=", tokenRequestBody);
+        Assert.DoesNotContain("service=", tokenRequestBody);
         Assert.Equal(0, innerHandler.RemainingRequestCount);
     }
 

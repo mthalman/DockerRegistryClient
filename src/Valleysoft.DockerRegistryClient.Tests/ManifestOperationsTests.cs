@@ -331,7 +331,7 @@ public class ManifestOperationsTests
         handler.AddExpectedRequest(
             request => request.Method == HttpMethod.Get &&
                 request.RequestUri?.Host == "auth.example" &&
-                request.RequestUri.Query.Contains("scope=repository:repo:push"),
+                request.RequestUri.Query.Contains("scope=repository%3Arepo%3Apush"),
             new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("""{"access_token":"access-token"}""")
