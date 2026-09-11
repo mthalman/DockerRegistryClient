@@ -623,6 +623,68 @@ public class OAuthDelegatingHandlerTests
     }
 
     [Fact]
+    public async Task SendAsync_ConcurrentChallenges_KeepAuthorizationRequestLocal()
+    {
+        using var cancellationSource =
+            new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var innerHandler = new ConcurrentChallengeHandler();
+        using var httpClient = new HttpClient(
+            new OAuthDelegatingHandler(innerHandler));
+        using var firstRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            "https://registry.example/v2/first");
+        firstRequest.Headers.Authorization =
+            new AuthenticationHeaderValue("Bearer", "refresh-first");
+        using var secondRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            "https://registry.example/v2/second");
+        secondRequest.Headers.Authorization =
+            new AuthenticationHeaderValue("Bearer", "refresh-second");
+
+        Task<HttpResponseMessage> firstResponseTask =
+            httpClient.SendAsync(firstRequest, cancellationSource.Token);
+        await innerHandler.FirstRequestStarted.WaitAsync(
+            cancellationSource.Token);
+        Task<HttpResponseMessage> secondResponseTask =
+            httpClient.SendAsync(secondRequest, cancellationSource.Token);
+
+        HttpResponseMessage[] responses =
+            await Task.WhenAll(firstResponseTask, secondResponseTask);
+
+        Assert.All(
+            responses,
+            response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
+        foreach (HttpResponseMessage response in responses)
+        {
+            response.Dispose();
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("grant_type=refresh_token")]
+    [InlineData("refresh_token=")]
+    [InlineData("refresh_token=unexpected")]
+    [InlineData("refresh_token=refresh-first-extra")]
+    [InlineData("scope=refresh-first&refresh_token=unexpected")]
+    public async Task ConcurrentChallengeHandler_InvalidRefreshToken_Throws(string content)
+    {
+        using var client = new HttpClient(new ConcurrentChallengeHandler());
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "https://auth.example/token")
+        {
+            Content = new StringContent(
+                content,
+                Encoding.UTF8,
+                "application/x-www-form-urlencoded")
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => client.SendAsync(request));
+    }
+
+    [Fact]
     public async Task SendAsync_NestedRequest_DoesNotReplaceOuterAuthorization()
     {
         var innerHandler = new MockHttpMessageHandler();
@@ -949,6 +1011,76 @@ public class OAuthDelegatingHandlerTests
 
         public void PrepareForReplay()
         {
+        }
+    }
+
+    private sealed class ConcurrentChallengeHandler : HttpMessageHandler
+    {
+        private readonly TaskCompletionSource firstRequestStarted =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource secondRequestStarted =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task FirstRequestStarted => firstRequestStarted.Task;
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            if (request.RequestUri?.Host == "auth.example")
+            {
+                string content =
+                    await request.Content!.ReadAsStringAsync(cancellationToken);
+                string? refreshToken =
+                    System.Web.HttpUtility.ParseQueryString(content)["refresh_token"];
+                string requestName = refreshToken switch
+                {
+                    "refresh-first" => "first",
+                    "refresh-second" => "second",
+                    _ => throw new InvalidOperationException(
+                        "Token request must contain an expected request-specific refresh token.")
+                };
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        $$"""{"access_token":"access-{{requestName}}"}""")
+                };
+            }
+
+            string registryRequestName =
+                request.RequestUri!.AbsolutePath.EndsWith(
+                    "/first",
+                    StringComparison.Ordinal)
+                    ? "first"
+                    : "second";
+            if (request.Headers.Authorization?.Parameter ==
+                $"refresh-{registryRequestName}")
+            {
+                if (registryRequestName == "first")
+                {
+                    firstRequestStarted.SetResult();
+                    await secondRequestStarted.Task.WaitAsync(
+                        cancellationToken);
+                }
+                else
+                {
+                    secondRequestStarted.SetResult();
+                }
+
+                var unauthorizedResponse =
+                    new HttpResponseMessage(HttpStatusCode.Unauthorized);
+                unauthorizedResponse.Headers.WwwAuthenticate.Add(
+                    new AuthenticationHeaderValue(
+                        "Bearer",
+                        $"realm=\"https://auth.example/token\",service=\"registry.example\",scope=\"repository:{registryRequestName}:pull\""));
+                return unauthorizedResponse;
+            }
+
+            return new HttpResponseMessage(
+                request.Headers.Authorization?.Parameter ==
+                    $"access-{registryRequestName}"
+                    ? HttpStatusCode.OK
+                    : HttpStatusCode.BadRequest);
         }
     }
 
