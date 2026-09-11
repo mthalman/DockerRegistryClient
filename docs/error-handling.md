@@ -39,9 +39,16 @@ Some operations replace a `404 Not Found` exception with a more specific
 original status and error details from the inner exception, as the example
 does.
 
-## Check existence without an exception
+## Check whether a resource exists
 
-`client.Blobs.ExistsAsync` and `client.Manifests.ExistsAsync` return `false`
-instead of throwing for any non-success HTTP status. A `false` result can
-therefore mean that the resource is missing or that the registry rejected the
-request.
+`client.Blobs.ExistsAsync` and `client.Manifests.ExistsAsync` return `true` for
+successful HTTP responses and `false` only for `404 Not Found`.
+
+Other non-success responses, including `401 Unauthorized`, `403 Forbidden`,
+`429 Too Many Requests`, and `5xx` server errors, throw `RegistryException`.
+Read the response status and structured registry errors from the exception's
+`StatusCode` and `Errors` properties. Authentication failures, authorization
+failures, rate limiting, and registry outages do not mean the resource is missing.
+
+Cancellation and transport failures also propagate to the caller rather than
+returning `false`.
