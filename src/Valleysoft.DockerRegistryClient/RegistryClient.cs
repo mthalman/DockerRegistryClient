@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Net;
+using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Valleysoft.DockerRegistryClient.Credentials;
@@ -155,8 +156,15 @@ public class RegistryClient : IDisposable
 
     internal async Task<bool> SendExistsRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
     {
-        using HttpResponseMessage response = await SendRequestCoreAsync(request, ignoreUnsuccessfulResponse: true, cancellationToken).ConfigureAwait(false);
-        return response.IsSuccessStatusCode;
+        try
+        {
+            using HttpResponseMessage response = await SendRequestCoreAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (RegistryException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
+        {
+            return false;
+        }
     }
 
     internal async Task<HttpResponseMessage> SendRequestCoreAsync(
@@ -185,16 +193,15 @@ public class RegistryClient : IDisposable
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (response.Content is null)
+                string errorContent = string.Empty;
+                if (response.Content is not null)
                 {
-                    throw new InvalidOperationException($"Response content is null.");
-                }
-
 #if NET5_0_OR_GREATER
-                string errorContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    errorContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #else
-                string errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 #endif
+                }
 
                 ErrorResult? errorResult = ParseErrorResult(response, errorContent);
 

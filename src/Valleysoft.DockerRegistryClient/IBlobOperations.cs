@@ -37,7 +37,8 @@ public interface IBlobOperations
     /// <param name="repositoryName">Name of the repository containing the blob.</param>
     /// <param name="digest">Blob digest, such as <c>sha256:&lt;value&gt;</c>.</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
-    /// <returns><see langword="true"/> when the registry returns a successful response; otherwise, <see langword="false"/>.</returns>
+    /// <returns><see langword="true"/> for a successful response; <see langword="false"/> for HTTP 404 Not Found.</returns>
+    /// <exception cref="RegistryException">The registry returns an unsuccessful response other than HTTP 404 Not Found.</exception>
     Task<bool> ExistsAsync(
         string repositoryName, string digest, CancellationToken cancellationToken = default);
 
