@@ -178,6 +178,102 @@ public class BlobOperationsTests
         result.Content.Dispose();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetRangeAsync_ReturnedStreamMemoryRead_ForwardsBufferAndCancellationToken(bool cancel)
+    {
+        using var body = new TrackingMemoryStream([5, 6, 7]);
+        using var response = CreateTrackingRangeResponse(body);
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Get,
+            $"https://registry.example/v2/repo/blobs/{Digest}",
+            response);
+        using var client = CreateClient(handler);
+        BlobDownloadResult result = await client.Blobs.GetRangeAsync("repo", Digest, 0, 3);
+        using Stream stream = result.Content;
+        using var cancellationSource = new CancellationTokenSource();
+        byte[] buffer = [9, 9, 9, 9, 9];
+
+        Assert.True(body.CanRead);
+        Assert.Equal(0, body.MemoryReadCount);
+        if (cancel)
+        {
+            cancellationSource.Cancel();
+            OperationCanceledException exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => stream.ReadAsync(buffer.AsMemory(1, 3), cancellationSource.Token).AsTask());
+            Assert.Equal(cancellationSource.Token, exception.CancellationToken);
+            Assert.Equal([9, 9, 9, 9, 9], buffer);
+            Assert.Equal(0, body.Position);
+        }
+        else
+        {
+            int bytesRead = await stream.ReadAsync(buffer.AsMemory(1, 3), cancellationSource.Token);
+
+            Assert.Equal(3, bytesRead);
+            Assert.Equal([9, 5, 6, 7, 9], buffer);
+            Assert.Equal(3, body.Position);
+        }
+
+        Assert.Equal(1, body.MemoryReadCount);
+        Assert.Equal(buffer.AsMemory(1, 3), body.LastReadBuffer);
+        Assert.Equal(cancellationSource.Token, body.LastCancellationToken);
+        Assert.True(body.CanRead);
+        Assert.Equal(0, handler.RemainingRequestCount);
+        stream.Dispose();
+        Assert.False(body.CanRead);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => response.Content.ReadAsStreamAsync());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetRangeAsync_ReturnedStreamMemoryWrite_ForwardsBufferAndCancellationToken(bool cancel)
+    {
+        using var body = new TrackingMemoryStream([5, 6, 7]);
+        using var response = CreateTrackingRangeResponse(body);
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Get,
+            $"https://registry.example/v2/repo/blobs/{Digest}",
+            response);
+        using var client = CreateClient(handler);
+        BlobDownloadResult result = await client.Blobs.GetRangeAsync("repo", Digest, 0, 3);
+        using Stream stream = result.Content;
+        using var cancellationSource = new CancellationTokenSource();
+        byte[] buffer = [9, 1, 2, 9];
+        ReadOnlyMemory<byte> payload = buffer.AsMemory(1, 2);
+
+        Assert.True(stream.CanWrite);
+        Assert.Equal(0, body.MemoryWriteCount);
+        if (cancel)
+        {
+            cancellationSource.Cancel();
+            OperationCanceledException exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => stream.WriteAsync(payload, cancellationSource.Token).AsTask());
+            Assert.Equal(cancellationSource.Token, exception.CancellationToken);
+            Assert.Equal([5, 6, 7], body.ToArray());
+            Assert.Equal(0, body.Position);
+        }
+        else
+        {
+            await stream.WriteAsync(payload, cancellationSource.Token);
+
+            Assert.Equal([1, 2, 7], body.ToArray());
+            Assert.Equal(2, body.Position);
+        }
+
+        Assert.Equal(1, body.MemoryWriteCount);
+        Assert.Equal(payload, body.LastWriteBuffer);
+        Assert.Equal(cancellationSource.Token, body.LastCancellationToken);
+        Assert.True(body.CanWrite);
+        Assert.Equal(0, handler.RemainingRequestCount);
+        stream.Dispose();
+        Assert.False(body.CanWrite);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => response.Content.ReadAsStreamAsync());
+    }
+
     [Fact]
     public async Task GetRangeAsync_RangeIgnored_ReturnsFullContentMetadata()
     {
@@ -460,6 +556,17 @@ public class BlobOperationsTests
     private static RegistryClient CreateClient(HttpMessageHandler handler) =>
         new("registry.example", null, new HttpClient(handler), disposeHttpClient: true);
 
+    private static HttpResponseMessage CreateTrackingRangeResponse(Stream body)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+        {
+            Content = new DirectStreamContent(body)
+        };
+        response.Content.Headers.ContentRange = new ContentRangeHeaderValue(0, 2, 3);
+        response.Content.Headers.ContentLength = 3;
+        return response;
+    }
+
     private static async Task<byte[]> ReadAllBytesAsync(Stream stream)
     {
         using var destination = new MemoryStream();
@@ -483,5 +590,51 @@ public class BlobOperationsTests
             Memory<byte> buffer,
             CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("The response body was buffered.");
+    }
+
+    private sealed class DirectStreamContent : StreamContent
+    {
+        private readonly Stream stream;
+
+        public DirectStreamContent(Stream stream)
+            : base(stream)
+        {
+            this.stream = stream;
+        }
+
+        protected override Task<Stream> CreateContentReadStreamAsync() => Task.FromResult(stream);
+    }
+
+    private sealed class TrackingMemoryStream(byte[] buffer) : MemoryStream(buffer)
+    {
+        public int MemoryReadCount { get; private set; }
+
+        public int MemoryWriteCount { get; private set; }
+
+        public Memory<byte> LastReadBuffer { get; private set; }
+
+        public ReadOnlyMemory<byte> LastWriteBuffer { get; private set; }
+
+        public CancellationToken LastCancellationToken { get; private set; }
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            MemoryReadCount++;
+            LastReadBuffer = buffer;
+            LastCancellationToken = cancellationToken;
+            return base.ReadAsync(buffer, cancellationToken);
+        }
+
+        public override ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            MemoryWriteCount++;
+            LastWriteBuffer = buffer;
+            LastCancellationToken = cancellationToken;
+            return base.WriteAsync(buffer, cancellationToken);
+        }
     }
 }

@@ -9,7 +9,15 @@ dotnet restore
 dotnet build
 ```
 
-There is no test project in this repository.
+The test project targets `net10.0` and exercises the `net8.0` library asset.
+Run unit tests without Docker:
+
+```shell
+dotnet test -f net10.0 --filter "Category!=Integration"
+```
+
+Integration tests use `--filter "Category=Integration"` and require Docker.
+See `CONTRIBUTING.md` for coverage collection commands.
 
 ## Architecture
 
@@ -31,7 +39,7 @@ Paginated results are wrapped in `Page<T>`, which carries a `NextPageLink` for c
 
 ## Conventions
 
-- **Multi-targeting**: The project targets `netstandard2.0`, `net8.0`, and `net9.0`. Use `#if NET5_0_OR_GREATER` / `#if NETSTANDARD2_0` preprocessor directives when APIs differ across targets.
+- **Multi-targeting**: The library targets `netstandard2.0` and `net8.0`; tooling and tests use .NET 10. The `netstandard2.0` target is verified by compilation only. Use `#if NET5_0_OR_GREATER` / `#if NETSTANDARD2_0` preprocessor directives when APIs differ across targets.
 - **Serialization**: Uses `System.Text.Json` exclusively (no Newtonsoft.Json).
 - **Async pattern**: All public API methods are async, accept an optional `CancellationToken`, and use `.ConfigureAwait(false)`.
 - **Error handling**: Unsuccessful HTTP responses throw `RegistryException` with `Errors` and `StatusCode` properties. Operations that check existence (e.g., `ExistsAsync`) return `true` for successful responses and `false` only for HTTP 404 Not Found; other unsuccessful responses throw `RegistryException`.

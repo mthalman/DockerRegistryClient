@@ -101,8 +101,11 @@ public class RedirectDelegatingHandlerTests
     [Theory]
     [InlineData(300, "POST", "GET", false)]
     [InlineData(301, "POST", "GET", false)]
+    [InlineData(301, "PUT", "PUT", true)]
     [InlineData(302, "POST", "GET", false)]
+    [InlineData(302, "PUT", "PUT", true)]
     [InlineData(303, "PUT", "GET", false)]
+    [InlineData(303, "HEAD", "HEAD", true)]
     [InlineData(307, "POST", "POST", true)]
     [InlineData(308, "POST", "POST", true)]
     public async Task SendAsync_RedirectAppliesMethodContentAndAuthorizationRules(
@@ -112,30 +115,96 @@ public class RedirectDelegatingHandlerTests
         bool expectsContent)
     {
         var innerHandler = new MockHttpMessageHandler();
+        HttpResponseMessage redirectResponse = CreateRedirectResponse("/destination", (HttpStatusCode)statusCode);
+        redirectResponse.Content = new StringContent("redirect");
         innerHandler.AddExpectedRequest(
-            new HttpMethod(originalMethod),
-            "https://registry.example/source",
-            CreateRedirectResponse("/destination", (HttpStatusCode)statusCode));
+            request =>
+                request.Method == new HttpMethod(originalMethod) &&
+                request.RequestUri == new Uri("https://registry.example/source") &&
+                request.Headers.Authorization?.Parameter == "token" &&
+                ReadContent(request.Content!).SequenceEqual("content"u8.ToArray()),
+            redirectResponse);
         innerHandler.AddExpectedRequest(
             request =>
                 request.RequestUri == new Uri("https://registry.example/destination") &&
                 request.Method == new HttpMethod(expectedMethod) &&
                 (request.Content is not null) == expectsContent &&
+                (!expectsContent ||
+                    (request.Content!.Headers.ContentType?.MediaType == "text/plain" &&
+                        ReadContent(request.Content).SequenceEqual("content"u8.ToArray()))) &&
+                request.Headers.TransferEncodingChunked == expectsContent &&
                 request.Headers.Authorization is null,
             new HttpResponseMessage(HttpStatusCode.OK));
         using var client = new HttpClient(new RedirectDelegatingHandler(innerHandler));
+        using var content = new StringContent("content");
         using var request = new HttpRequestMessage(
             new HttpMethod(originalMethod),
             "https://registry.example/source")
         {
-            Content = new StringContent("content")
+            Content = content
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "token");
+        request.Headers.TransferEncodingChunked = true;
 
         using HttpResponseMessage response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(0, innerHandler.RemainingRequestCount);
+        Assert.Equal("content", await content.ReadAsStringAsync());
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => redirectResponse.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task SendAsync_RedirectWithExplicitFragment_PreservesDestinationFragment()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        HttpResponseMessage redirectResponse = CreateRedirectResponse("/destination#destination-fragment");
+        redirectResponse.Content = new StringContent("redirect");
+        innerHandler.AddExpectedRequest(
+            HttpMethod.Get,
+            "https://registry.example/source#source-fragment",
+            redirectResponse);
+        innerHandler.AddExpectedRequest(
+            request => request.Method == HttpMethod.Get &&
+                request.RequestUri?.AbsoluteUri == "https://registry.example/destination#destination-fragment",
+            new HttpResponseMessage(HttpStatusCode.OK));
+        using var client = new HttpClient(new RedirectDelegatingHandler(innerHandler));
+
+        using HttpResponseMessage response = await client.GetAsync(
+            "https://registry.example/source#source-fragment");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => redirectResponse.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task SendAsync_RedirectWithoutLocation_ReturnsOriginalResponseWithoutRetry()
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        using var redirectResponse = new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)
+        {
+            Content = new StringContent("redirect")
+        };
+        innerHandler.AddExpectedRequest(
+            HttpMethod.Get,
+            "https://registry.example/source",
+            redirectResponse);
+        using var client = new HttpClient(new RedirectDelegatingHandler(innerHandler));
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://registry.example/source");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "token");
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Same(redirectResponse, response);
+        Assert.Equal(HttpStatusCode.TemporaryRedirect, response.StatusCode);
+        Assert.Null(response.Headers.Location);
+        Assert.Equal("redirect", await response.Content.ReadAsStringAsync());
+        Assert.Equal("token", request.Headers.Authorization?.Parameter);
+        Assert.Equal(new Uri("https://registry.example/source"), request.RequestUri);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+        response.Dispose();
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => redirectResponse.Content.ReadAsStringAsync());
     }
 
     [Fact]

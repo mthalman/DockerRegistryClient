@@ -31,6 +31,48 @@ public class ReplayableStreamContentTests
     }
 
     [Fact]
+    public void CopyTo_MultipleSerializationsReplayFromInitialPosition()
+    {
+        using var sourceStream = new MemoryStream([1, 2, 3, 4]);
+        sourceStream.Position = 1;
+        using var content = new ReplayableStreamContent(sourceStream);
+        using var firstDestination = new MemoryStream();
+        using var secondDestination = new MemoryStream();
+
+        content.CopyTo(firstDestination, context: null, CancellationToken.None);
+        content.CopyTo(secondDestination, context: null, CancellationToken.None);
+
+        Assert.Equal(3, content.Headers.ContentLength);
+        Assert.Equal([2, 3, 4], firstDestination.ToArray());
+        Assert.Equal(firstDestination.ToArray(), secondDestination.ToArray());
+        Assert.True(sourceStream.CanRead);
+        content.Dispose();
+        Assert.False(sourceStream.CanRead);
+    }
+
+    [Fact]
+    public void CopyTo_ConsumedNonSeekableStream_RefusesReplay()
+    {
+        using var sourceStream = new NonSeekableReadStream([1, 2, 3]);
+        using var content = new ReplayableStreamContent(sourceStream);
+        using var firstDestination = new MemoryStream();
+        using var secondDestination = new MemoryStream();
+
+        content.CopyTo(firstDestination, context: null, CancellationToken.None);
+
+        Assert.Equal([1, 2, 3], firstDestination.ToArray());
+        Assert.Equal(3, sourceStream.BytesRead);
+        Assert.Throws<ObjectDisposedException>(() => sourceStream.ReadByte());
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            () => content.CopyTo(secondDestination, context: null, CancellationToken.None));
+
+        Assert.Contains("non-seekable", exception.Message);
+        Assert.Empty(secondDestination.ToArray());
+        Assert.Equal(3, sourceStream.BytesRead);
+    }
+
+    [Fact]
     public async Task PrepareForReplay_UnconsumedNonSeekableStream_AllowsFirstSerialization()
     {
         using var sourceStream = new NonSeekableReadStream([1, 2, 3]);

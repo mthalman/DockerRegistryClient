@@ -14,6 +14,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       checks: write
 
     steps:
@@ -33,27 +34,140 @@ jobs:
         run: dotnet build -c Release --no-restore
 
       - name: Test unit tests
+        id: unit-tests
         run: >-
-          dotnet test -c Release --no-restore --no-build
+          dotnet test -c Release -f net10.0 --no-restore --no-build
           --filter "Category!=Integration"
+          --collect:"XPlat Code Coverage"
+          --settings coverage.runsettings
           --logger "trx;LogFileName=unit-tests.trx"
-          --results-directory TestResults
+          --results-directory TestResults/unit
+
+      - name: Summarize unit coverage
+        if: ${{ !cancelled() && (steps.unit-tests.outcome == 'success' || steps.unit-tests.outcome == 'failure') }}
+        shell: pwsh
+        env:
+          UNIT_TEST_OUTCOME: ${{ steps.unit-tests.outcome }}
+        run: |
+          $reports = @(Get-ChildItem TestResults/unit/*/coverage.cobertura.xml -File)
+          if ($reports.Count -ne 1) {
+            throw "Expected one unit coverage report, found $($reports.Count)."
+          }
+
+          [xml] $report = Get-Content $reports[0].FullName -Raw
+          $packages = @($report.coverage.packages.package)
+          if ($packages.Count -ne 1 -or $packages[0].name -ne 'Valleysoft.DockerRegistryClient') {
+            throw 'Coverage must contain only the production assembly.'
+          }
+
+          $linesCovered = [long] $report.coverage.'lines-covered'
+          $linesValid = [long] $report.coverage.'lines-valid'
+          $branchesCovered = [long] $report.coverage.'branches-covered'
+          $branchesValid = [long] $report.coverage.'branches-valid'
+          if ($linesValid -le 0 -or $branchesValid -le 0 -or
+              $linesCovered -lt 0 -or $linesCovered -gt $linesValid -or
+              $branchesCovered -lt 0 -or $branchesCovered -gt $branchesValid) {
+            throw 'Coverage report contains invalid line or branch counts.'
+          }
+
+          $culture = [System.Globalization.CultureInfo]::InvariantCulture
+          $lineRate = ($linesCovered / $linesValid).ToString('P2', $culture)
+          $branchRate = ($branchesCovered / $branchesValid).ToString('P2', $culture)
+          $summary = @"
+          ## Unit coverage baseline
+
+          Revision: $env:GITHUB_SHA
+          Runner OS: $env:RUNNER_OS
+          Test outcome: $env:UNIT_TEST_OUTCOME
+          Scope: net8.0 library asset on the .NET 10 runtime; unit tests only.
+
+          | Metric | Covered | Total | Coverage |
+          | --- | ---: | ---: | ---: |
+          | Lines | $linesCovered | $linesValid | $lineRate |
+          | Branches | $branchesCovered | $branchesValid | $branchRate |
+
+          No coverage threshold is enforced. Only successful runs establish a baseline.
+          netstandard2.0 is compilation-only; this is not .NET 8 runtime coverage.
+          "@
+          $summary | Set-Content TestResults/unit/coverage-summary.md
+          $summary | Add-Content $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload unit coverage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() && (steps.unit-tests.outcome == 'success' || steps.unit-tests.outcome == 'failure') }}
+        with:
+          name: unit-coverage-net8-on-net10
+          path: |
+            src/TestResults/unit/*/coverage.cobertura.xml
+            src/TestResults/unit/coverage-summary.md
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload unit test results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() && (steps.unit-tests.outcome == 'success' || steps.unit-tests.outcome == 'failure') }}
+        with:
+          name: unit-test-results-net10
+          path: src/TestResults/unit/*.trx
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Unit test results
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3
+        if: ${{ !cancelled() && (steps.unit-tests.outcome == 'success' || steps.unit-tests.outcome == 'failure') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        with:
+          name: Unit test results (.NET 10)
+          path: src/TestResults/unit/*.trx
+          reporter: dotnet-trx
+          fail-on-error: true
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET Core SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Install dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build -c Release --no-restore
 
       - name: Verify Docker
         run: docker info
 
       - name: Test integration tests
+        id: integration-tests
         run: >-
-          dotnet test -c Release --no-restore --no-build
+          dotnet test -c Release -f net10.0 --no-restore --no-build
           --filter "Category=Integration"
           --logger "trx;LogFileName=integration-tests.trx"
-          --results-directory TestResults
+          --results-directory TestResults/integration
 
-      - name: Test Results
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3
-        if: always() && !cancelled()
+      - name: Upload integration test results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() && (steps.integration-tests.outcome == 'success' || steps.integration-tests.outcome == 'failure') }}
         with:
-          name: Test Results
-          path: src/TestResults/*.trx
+          name: integration-test-results-net10
+          path: src/TestResults/integration/*.trx
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Integration test results
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3
+        if: ${{ !cancelled() && (steps.integration-tests.outcome == 'success' || steps.integration-tests.outcome == 'failure') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        with:
+          name: Integration test results (.NET 10)
+          path: src/TestResults/integration/*.trx
           reporter: dotnet-trx
           fail-on-error: true
