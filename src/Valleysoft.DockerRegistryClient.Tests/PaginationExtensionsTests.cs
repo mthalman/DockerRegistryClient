@@ -115,17 +115,20 @@ public class PaginationExtensionsTests
     public async Task ReferrerGetAllPagesAsync_ReturnsEveryPage()
     {
         const string ArtifactType = "application/spdx+json";
+        string subjectDigest = RegistryFixture.GetDigest([0]);
+        string firstDigest = RegistryFixture.GetDigest([1]);
+        string secondDigest = RegistryFixture.GetDigest([2]);
         var firstPage = new Page<OciImageIndex>(
-            new OciImageIndex { Manifests = [new ManifestReference { Digest = "sha256:1" }] },
-            "/v2/repo/referrers/sha256:subject?last=sha256%3A1");
+            new OciImageIndex { Manifests = [new ManifestReference { Digest = firstDigest }] },
+            $"/v2/repo/referrers/{subjectDigest}?last={Uri.EscapeDataString(firstDigest)}");
         var secondPage = new Page<OciImageIndex>(
-            new OciImageIndex { Manifests = [new ManifestReference { Digest = "sha256:2" }] },
+            new OciImageIndex { Manifests = [new ManifestReference { Digest = secondDigest }] },
             nextPageLink: null);
         var operations = new Mock<IReferrerOperations>();
         operations
             .Setup(value => value.GetAsync(
                 "repo",
-                "sha256:subject",
+                subjectDigest,
                 ArtifactType,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(firstPage);
@@ -136,7 +139,7 @@ public class PaginationExtensionsTests
         List<Page<OciImageIndex>> pages = await CollectAsync(
             operations.Object.GetAllPagesAsync(
                 "repo",
-                "sha256:subject",
+                subjectDigest,
                 artifactType: ArtifactType));
 
         Assert.Equal([firstPage, secondPage], pages);
@@ -145,11 +148,12 @@ public class PaginationExtensionsTests
     [Fact]
     public async Task ReferrerGetAllAsync_ReturnsEveryManifestReference()
     {
-        var firstManifest = new ManifestReference { Digest = "sha256:1" };
-        var secondManifest = new ManifestReference { Digest = "sha256:2" };
+        string subjectDigest = RegistryFixture.GetDigest([0]);
+        var firstManifest = new ManifestReference { Digest = RegistryFixture.GetDigest([1]) };
+        var secondManifest = new ManifestReference { Digest = RegistryFixture.GetDigest([2]) };
         var firstPage = new Page<OciImageIndex>(
             new OciImageIndex { Manifests = [firstManifest] },
-            "/v2/repo/referrers/sha256:subject?last=sha256%3A1");
+            $"/v2/repo/referrers/{subjectDigest}?last={Uri.EscapeDataString(firstManifest.Digest!)}");
         var secondPage = new Page<OciImageIndex>(
             new OciImageIndex { Manifests = [secondManifest] },
             nextPageLink: null);
@@ -157,7 +161,7 @@ public class PaginationExtensionsTests
         operations
             .Setup(value => value.GetAsync(
                 "repo",
-                "sha256:subject",
+                subjectDigest,
                 null,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(firstPage);
@@ -166,7 +170,7 @@ public class PaginationExtensionsTests
             .ReturnsAsync(secondPage);
 
         List<ManifestReference> manifests = await CollectAsync(
-            operations.Object.GetAllAsync("repo", "sha256:subject"));
+            operations.Object.GetAllAsync("repo", subjectDigest));
 
         Assert.Equal([firstManifest, secondManifest], manifests);
     }

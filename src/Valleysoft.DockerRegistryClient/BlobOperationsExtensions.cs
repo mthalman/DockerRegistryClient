@@ -43,8 +43,12 @@ public static class BlobOperationsExtensions
     /// <remarks>
     /// This is a convenience method that uses the more primitive <see cref="IBlobOperations.BeginUploadAsync"/> and <see cref="IBlobOperations.EndUploadAsync"/> methods.
     /// </remarks>
+    /// <exception cref="ArgumentNullException">A required repository name or digest is null.</exception>
+    /// <exception cref="ArgumentException">The repository name or digest is invalid. Validation precedes upload initialization and stream access.</exception>
     public static async Task<BlobUploadResult> UploadAsync(this IBlobOperations operations, string repositoryName, Stream stream, string digest, CancellationToken cancellationToken = default)
     {
+        RegistryReferenceValidator.ValidateRepository(repositoryName, nameof(repositoryName));
+        RegistryReferenceValidator.ValidateDigest(digest, nameof(digest));
         BlobUploadInitializationResult result = await operations.BeginUploadAsync(repositoryName, cancellationToken).ConfigureAwait(false);
         return await operations.EndUploadAsync(result.Location, digest, result.UploadContext, stream, cancellationToken).ConfigureAwait(false);
     }

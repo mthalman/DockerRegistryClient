@@ -18,15 +18,11 @@ internal class ReferrerOperations : IReferrerOperations
 
     public async Task<Page<OciImageIndex>> GetAsync(string repositoryName, string digest, string? artifactType = null, CancellationToken cancellationToken = default)
     {
-        string url = $"v2/{repositoryName}/referrers/{digest}";
-        if (!string.IsNullOrEmpty(artifactType))
-        {
-            url = $"{url}?artifactType={Uri.EscapeDataString(artifactType)}";
-        }
+        Uri uri = RegistryUriBuilder.Referrers(Client.BaseUri, repositoryName, digest, artifactType);
 
         try
         {
-            return await GetNextCoreAsync(url, artifactType, cancellationToken).ConfigureAwait(false);
+            return await GetNextCoreAsync(uri.AbsoluteUri, artifactType, cancellationToken).ConfigureAwait(false);
         }
         catch (RegistryException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
@@ -69,7 +65,7 @@ internal class ReferrerOperations : IReferrerOperations
         string? nextPageLink = ResolveNextPageLink(
             response.RequestMessage?.RequestUri ?? requestUri,
             page.NextPageLink);
-        if (string.IsNullOrEmpty(artifactType))
+        if (artifactType is null || artifactType.Length == 0)
         {
             return new Page<OciImageIndex>(page.Value, nextPageLink);
         }
@@ -83,10 +79,10 @@ internal class ReferrerOperations : IReferrerOperations
 
         if (nextPageLink is not null && GetArtifactType(nextPageLink) is null)
         {
-            nextPageLink = AppendQueryParameter(
-                nextPageLink,
+            nextPageLink = RegistryUriBuilder.AddQueryParameter(
+                new Uri(nextPageLink),
                 "artifactType",
-                Uri.EscapeDataString(artifactType));
+                artifactType).AbsoluteUri;
         }
 
         return new Page<OciImageIndex>(page.Value, nextPageLink);
@@ -127,15 +123,6 @@ internal class ReferrerOperations : IReferrerOperations
     private Uri ResolveRegistryUri(Uri baseUri, string uriReference)
     {
         return UrlHelper.ResolveSameOrigin(Client.BaseUri, baseUri, uriReference);
-    }
-
-    private static string AppendQueryParameter(string url, string name, string value)
-    {
-        int fragmentIndex = url.IndexOf('#');
-        string fragment = fragmentIndex >= 0 ? url.Substring(fragmentIndex) : string.Empty;
-        string urlWithoutFragment = fragmentIndex >= 0 ? url.Substring(0, fragmentIndex) : url;
-        char separator = urlWithoutFragment.Contains('?') ? '&' : '?';
-        return $"{urlWithoutFragment}{separator}{name}={value}{fragment}";
     }
 
     private async Task<Page<OciImageIndex>> GetFallbackAsync(

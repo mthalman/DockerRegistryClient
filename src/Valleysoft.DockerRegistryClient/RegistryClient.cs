@@ -59,8 +59,9 @@ public class RegistryClient : IDisposable
     /// <summary>
     /// Initializes a client that uses anonymous access and an internally managed HTTP client.
     /// </summary>
-    /// <param name="registry">Registry host name or absolute base URI. HTTPS is used when no scheme is specified.</param>
+    /// <param name="registry">Registry host name or HTTP(S) origin. HTTPS is used when no scheme is specified.</param>
     /// <exception cref="ArgumentNullException"><paramref name="registry"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="registry"/> is not an HTTP(S) origin, or contains user information, a non-root path, a query, or a fragment.</exception>
     public RegistryClient(string registry)
         : this(registry, serviceClientCredentials: null)
     {
@@ -69,9 +70,10 @@ public class RegistryClient : IDisposable
     /// <summary>
     /// Initializes a client with credentials and an internally managed HTTP client.
     /// </summary>
-    /// <param name="registry">Registry host name or absolute base URI. HTTPS is used when no scheme is specified.</param>
+    /// <param name="registry">Registry host name or HTTP(S) origin. HTTPS is used when no scheme is specified.</param>
     /// <param name="serviceClientCredentials">Credentials applied to registry requests, or <see langword="null"/> for anonymous access.</param>
     /// <exception cref="ArgumentNullException"><paramref name="registry"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="registry"/> is not an HTTP(S) origin, or contains user information, a non-root path, a query, or a fragment.</exception>
     public RegistryClient(string registry, IRegistryClientCredentials? serviceClientCredentials)
         : this(registry, serviceClientCredentials, httpClient: null)
     {
@@ -80,13 +82,16 @@ public class RegistryClient : IDisposable
     /// <summary>
     /// Initializes a registry client with optional credentials and HTTP transport.
     /// </summary>
-    /// <param name="registry">Registry host name or absolute base URI. HTTPS is used when no scheme is specified.</param>
+    /// <param name="registry">Registry host name or HTTP(S) origin. HTTPS is used when no scheme is specified.</param>
     /// <param name="serviceClientCredentials">Credentials applied to registry requests, or <see langword="null"/> for anonymous access.</param>
     /// <param name="httpClient">HTTP client to use, or <see langword="null"/> to create a client with built-in bearer authentication and redirect handling.</param>
     /// <param name="disposeHttpClient">Whether disposing this instance also disposes a supplied <paramref name="httpClient"/>. An internally created client is always disposed.</param>
     /// <exception cref="ArgumentNullException"><paramref name="registry"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="registry"/> is not an HTTP(S) origin, or contains user information, a non-root path, a query, or a fragment.</exception>
     public RegistryClient(string registry, IRegistryClientCredentials? serviceClientCredentials, HttpClient? httpClient, bool disposeHttpClient = false)
     {
+        Uri registryUri = RegistryUriBuilder.CreateOrigin(registry);
+
         if (httpClient is null)
         {
             this.HttpClient = CreateHttpClient(
@@ -104,17 +109,8 @@ public class RegistryClient : IDisposable
 
         this.disposeHttpClient = disposeHttpClient;
 
-        if (registry is null)
-        {
-            throw new ArgumentNullException(nameof(registry));
-        }
-
-        Uri registryUri = registry.Contains("://")
-            ? new Uri(registry)
-            : new Uri($"https://{registry}");
-
         this.Registry = registryUri.Host + (registryUri.IsDefaultPort ? string.Empty : $":{registryUri.Port}");
-        this.BaseUri = new Uri(registryUri.GetLeftPart(UriPartial.Authority));
+        this.BaseUri = registryUri;
 
         this.credentials = serviceClientCredentials;
 

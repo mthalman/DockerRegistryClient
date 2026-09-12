@@ -33,6 +33,8 @@ public static class RegistryClientExtensions
     /// Existing destination dependencies are skipped. Docker foreign layers and OCI
     /// non-distributable layers remain referenced by the manifest but are not uploaded.
     /// </remarks>
+    /// <exception cref="ArgumentNullException">A required client, repository name, or reference is null.</exception>
+    /// <exception cref="ArgumentException">A source or destination repository name, tag, or digest is invalid. Validation precedes all requests.</exception>
     public static Task<ManifestPublishResult> CopyAsync(
         this RegistryClient sourceClient,
         string sourceRepositoryName,
@@ -51,12 +53,10 @@ public static class RegistryClientExtensions
         {
             throw new ArgumentNullException(nameof(destinationClient));
         }
-        ValidateRequired(sourceRepositoryName, nameof(sourceRepositoryName));
-        ValidateRequired(sourceReference, nameof(sourceReference));
-        ValidateRequired(destinationRepositoryName, nameof(destinationRepositoryName));
-        ValidateRequired(destinationReference, nameof(destinationReference));
-        ValidateReference(sourceReference, nameof(sourceReference));
-        ValidateReference(destinationReference, nameof(destinationReference));
+        RegistryReferenceValidator.ValidateRepository(sourceRepositoryName, nameof(sourceRepositoryName));
+        RegistryReferenceValidator.ValidateReference(sourceReference, nameof(sourceReference));
+        RegistryReferenceValidator.ValidateRepository(destinationRepositoryName, nameof(destinationRepositoryName));
+        RegistryReferenceValidator.ValidateReference(destinationReference, nameof(destinationReference));
 
         return new CopyContext(
             sourceClient,
@@ -66,24 +66,6 @@ public static class RegistryClientExtensions
                 sourceReference,
                 destinationReference,
                 cancellationToken);
-    }
-
-    private static void ValidateRequired(string value, string parameterName)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new ArgumentException("The value cannot be null, empty, or whitespace.", parameterName);
-        }
-    }
-
-    private static void ValidateReference(string value, string parameterName)
-    {
-        if (!ManifestOperations.IsValidReference(value))
-        {
-            throw new ArgumentException(
-                "The value must be a valid manifest tag or digest.",
-                parameterName);
-        }
     }
 
     private sealed class CopyContext
@@ -121,7 +103,7 @@ public static class RegistryClientExtensions
                 cancellationToken).ConfigureAwait(false);
 
             AddVerifiedManifestIdentity(root.DockerContentDigest, root.Content);
-            if (ManifestOperations.IsValidDigest(sourceReference))
+            if (RegistryReferenceValidator.IsValidDigest(sourceReference))
             {
                 AddVerifiedManifestIdentity(sourceReference, root.Content);
             }
@@ -476,7 +458,7 @@ public static class RegistryClientExtensions
 
         private static void ValidateDescriptorDigest(string digest)
         {
-            if (!ManifestOperations.IsValidDigest(digest))
+            if (!RegistryReferenceValidator.IsValidDigest(digest))
             {
                 throw new InvalidOperationException(
                     $"Source manifest contains invalid descriptor digest '{digest}'.");

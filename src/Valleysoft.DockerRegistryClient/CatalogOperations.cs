@@ -13,8 +13,8 @@ internal class CatalogOperations : ICatalogOperations
 
     public async Task<Page<Catalog>> GetAsync(int? count = null, CancellationToken cancellationToken = default)
     {
-        string url = UrlHelper.ApplyCount($"v2/_catalog", count);
-        return await GetNextAsync(url, cancellationToken).ConfigureAwait(false);
+        Uri uri = RegistryUriBuilder.Catalog(Client.BaseUri, count);
+        return await GetNextAsync(uri.AbsoluteUri, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<Page<Catalog>> GetNextAsync(string nextPageLink, CancellationToken cancellationToken = default)

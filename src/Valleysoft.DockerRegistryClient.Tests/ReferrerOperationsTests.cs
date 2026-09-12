@@ -7,17 +7,21 @@ namespace Valleysoft.DockerRegistryClient.Tests;
 
 public sealed class ReferrerOperationsTests
 {
+    private const string SubjectDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    private const string SubjectTag = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    private const string ReferrersUri = "https://registry.example/v2/repository/referrers/" + SubjectDigest;
+
     [Fact]
     public async Task GetAsync_WithoutFilter_ReturnsEmptyTerminalPage()
     {
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/referrers/sha256:subject",
+            ReferrersUri,
             CreateJsonResponse("""{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}"""));
         using var client = new RegistryClient("registry.example", null, new HttpClient(handler));
 
-        Page<OciImageIndex> page = await client.Referrers.GetAsync("repository", "sha256:subject");
+        Page<OciImageIndex> page = await client.Referrers.GetAsync("repository", SubjectDigest);
 
         Assert.Equal(2, page.Value.SchemaVersion);
         Assert.Equal(ManifestMediaTypes.OciImageIndex1, page.Value.MediaType);
@@ -31,11 +35,11 @@ public sealed class ReferrerOperationsTests
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/referrers/sha256:subject",
+            ReferrersUri,
             CreateJsonResponse("""{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":null,"annotations":null}"""));
         using var client = new RegistryClient("registry.example", null, new HttpClient(handler));
 
-        Page<OciImageIndex> page = await client.Referrers.GetAsync("repository", "sha256:subject");
+        Page<OciImageIndex> page = await client.Referrers.GetAsync("repository", SubjectDigest);
 
         Assert.Empty(page.Value.Manifests);
         Assert.Empty(page.Value.Annotations);
@@ -50,14 +54,14 @@ public sealed class ReferrerOperationsTests
             """{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:first","size":101,"artifactType":"application/spdx+json","annotations":{"name":"first"}}],"annotations":{"page":"one"}}""");
         firstResponse.Headers.Add(
             "Link",
-            "</v2/repository/referrers/sha256:subject?artifactType=application%2Fspdx%2Bjson&last=sha256:first>; rel=\"next\"");
+            $"</v2/repository/referrers/{SubjectDigest}?artifactType=application%2Fspdx%2Bjson&last=sha256:first>; rel=\"next\"");
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/referrers/sha256:subject?artifactType=application%2Fspdx%2Bjson",
+            ReferrersUri + "?artifactType=application%2Fspdx%2Bjson",
             firstResponse);
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/referrers/sha256:subject?artifactType=application%2Fspdx%2Bjson&last=sha256:first",
+            ReferrersUri + "?artifactType=application%2Fspdx%2Bjson&last=sha256:first",
             CreateJsonResponse(
                 """{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:second","size":202,"artifactType":"application/spdx+json","annotations":{"name":"second"}}]}"""));
         using var client = new RegistryClient("registry.example", null, new HttpClient(handler));
@@ -65,7 +69,7 @@ public sealed class ReferrerOperationsTests
         List<Page<OciImageIndex>> pages = [];
         await foreach (Page<OciImageIndex> page in client.Referrers.GetAllPagesAsync(
             "repository",
-            "sha256:subject",
+            SubjectDigest,
             ArtifactType))
         {
             pages.Add(page);
@@ -99,21 +103,21 @@ public sealed class ReferrerOperationsTests
             """{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:first","size":101,"artifactType":"application/spdx+json"},{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:excluded-first","size":102,"artifactType":"application/example"}]}""");
         firstResponse.Headers.Add(
             "Link",
-            "</v2/repository/referrers/sha256:subject?last=sha256:first>; rel=\"next\"");
+            $"</v2/repository/referrers/{SubjectDigest}?last=sha256:first>; rel=\"next\"");
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/referrers/sha256:subject?artifactType=application%2Fspdx%2Bjson",
+            ReferrersUri + "?artifactType=application%2Fspdx%2Bjson",
             firstResponse);
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/referrers/sha256:subject?last=sha256:first&artifactType=application%2Fspdx%2Bjson",
+            ReferrersUri + "?last=sha256:first&artifactType=application%2Fspdx%2Bjson",
             CreateJsonResponse(
                 """{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:second","size":201,"artifactType":"application/spdx+json"},{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:excluded-second","size":202,"artifactType":"application/example"}]}"""));
         using var client = new RegistryClient("registry.example", null, new HttpClient(handler));
 
         Page<OciImageIndex> firstPage = await client.Referrers.GetAsync(
             "repository",
-            "sha256:subject",
+            SubjectDigest,
             ArtifactType);
         Assert.Equal("sha256:first", Assert.Single(firstPage.Value.Manifests).Digest);
 
@@ -132,13 +136,13 @@ public sealed class ReferrerOperationsTests
         response.Headers.Add("OCI-Filters-Applied", "artifactType");
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/referrers/sha256:subject?artifactType=application%2Fspdx%2Bjson",
+            ReferrersUri + "?artifactType=application%2Fspdx%2Bjson",
             response);
         using var client = new RegistryClient("registry.example", null, new HttpClient(handler));
 
         Page<OciImageIndex> page = await client.Referrers.GetAsync(
             "repository",
-            "sha256:subject",
+            SubjectDigest,
             "application/spdx+json");
 
         Assert.Equal("sha256:native", Assert.Single(page.Value.Manifests).Digest);
@@ -147,11 +151,11 @@ public sealed class ReferrerOperationsTests
 
     [Theory]
     [InlineData(
-        "https://registry.example/v2/repository/referrers/sha256:subject?last=sha256:first",
-        "https://registry.example/v2/repository/referrers/sha256:subject?last=sha256:first")]
+        ReferrersUri + "?last=sha256:first",
+        ReferrersUri + "?last=sha256:first")]
     [InlineData(
         "?last=sha256:first",
-        "https://registry.example/v2/repository/referrers/sha256:subject?last=sha256:first")]
+        ReferrersUri + "?last=sha256:first")]
     public async Task GetNextAsync_ResolvesLinkAgainstOriginatingRequest(
         string nextPageLink,
         string expectedRequestUri)
@@ -162,7 +166,7 @@ public sealed class ReferrerOperationsTests
         firstResponse.Headers.Add("Link", $"<{nextPageLink}>; rel=\"next\"");
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/referrers/sha256:subject",
+            ReferrersUri,
             firstResponse);
         handler.AddExpectedRequest(
             HttpMethod.Get,
@@ -173,7 +177,7 @@ public sealed class ReferrerOperationsTests
 
         Page<OciImageIndex> firstPage = await client.Referrers.GetAsync(
             "repository",
-            "sha256:subject");
+            SubjectDigest);
         Page<OciImageIndex> secondPage = await client.Referrers.GetNextAsync(
             Assert.IsType<string>(firstPage.NextPageLink));
 
@@ -182,8 +186,8 @@ public sealed class ReferrerOperationsTests
     }
 
     [Theory]
-    [InlineData("https://attacker.example/v2/repository/referrers/sha256:subject?last=sha256:first")]
-    [InlineData("http://registry.example/v2/repository/referrers/sha256:subject?last=sha256:first")]
+    [InlineData("https://attacker.example/v2/repository/referrers/" + SubjectDigest + "?last=sha256:first")]
+    [InlineData("http://registry.example/v2/repository/referrers/" + SubjectDigest + "?last=sha256:first")]
     public async Task GetAsync_CrossOriginNextLink_Throws(string nextPageLink)
     {
         var handler = new MockHttpMessageHandler();
@@ -192,12 +196,12 @@ public sealed class ReferrerOperationsTests
         response.Headers.Add("Link", $"<{nextPageLink}>; rel=\"next\"");
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/referrers/sha256:subject",
+            ReferrersUri,
             response);
         using var client = new RegistryClient("registry.example", null, new HttpClient(handler));
 
         InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => client.Referrers.GetAsync("repository", "sha256:subject"));
+            () => client.Referrers.GetAsync("repository", SubjectDigest));
 
         Assert.Contains("registry origin", exception.Message);
         Assert.Equal(0, handler.RemainingRequestCount);
@@ -209,7 +213,7 @@ public sealed class ReferrerOperationsTests
         var innerHandler = new MockHttpMessageHandler();
         innerHandler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/referrers/sha256:subject",
+            ReferrersUri,
             new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)
             {
                 Headers =
@@ -220,7 +224,7 @@ public sealed class ReferrerOperationsTests
         using var client = new RegistryClient("registry.example", null, innerHandler);
 
         InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => client.Referrers.GetAsync("repository", "sha256:subject"));
+            () => client.Referrers.GetAsync("repository", SubjectDigest));
 
         Assert.Contains("outside the configured registry origin", exception.Message);
         Assert.Equal(0, innerHandler.RemainingRequestCount);
@@ -259,15 +263,15 @@ public sealed class ReferrerOperationsTests
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/referrers/sha256:subject",
+            ReferrersUri,
             CreateNotFoundResponse());
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/manifests/sha256-subject",
+            $"https://registry.example/v2/repository/manifests/{SubjectTag}",
             CreateNotFoundResponse());
         using var client = new RegistryClient("registry.example", null, new HttpClient(handler));
 
-        Page<OciImageIndex> page = await client.Referrers.GetAsync("repository", "sha256:subject");
+        Page<OciImageIndex> page = await client.Referrers.GetAsync("repository", SubjectDigest);
 
         Assert.Equal(2, page.Value.SchemaVersion);
         Assert.Equal(ManifestMediaTypes.OciImageIndex1, page.Value.MediaType);
@@ -281,20 +285,21 @@ public sealed class ReferrerOperationsTests
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/referrers/sha256:subject",
+            ReferrersUri,
             CreateNotFoundResponse());
         HttpResponseMessage manifestResponse = CreateJsonResponse(
             """{"schemaVersion":2,"mediaType":"application/vnd.docker.distribution.manifest.v2+json","config":null,"layers":[]}""");
         manifestResponse.Content.Headers.ContentType =
             new System.Net.Http.Headers.MediaTypeHeaderValue(ManifestMediaTypes.DockerManifestSchema2);
-        manifestResponse.Headers.Add("Docker-Content-Digest", "sha256:fallback");
+        manifestResponse.Headers.Add("Docker-Content-Digest",
+            RegistryFixture.GetDigest(await manifestResponse.Content.ReadAsByteArrayAsync()));
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/manifests/sha256-subject",
+            $"https://registry.example/v2/repository/manifests/{SubjectTag}",
             manifestResponse);
         using var client = new RegistryClient("registry.example", null, new HttpClient(handler));
 
-        Page<OciImageIndex> page = await client.Referrers.GetAsync("repository", "sha256:subject");
+        Page<OciImageIndex> page = await client.Referrers.GetAsync("repository", SubjectDigest);
 
         Assert.Empty(page.Value.Manifests);
         Assert.Null(page.NextPageLink);
@@ -308,21 +313,21 @@ public sealed class ReferrerOperationsTests
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/referrers/sha256:subject?artifactType=application%2Fspdx%2Bjson",
+            ReferrersUri + "?artifactType=application%2Fspdx%2Bjson",
             CreateNotFoundResponse());
         HttpResponseMessage invalidIndex = CreateJsonResponse(json);
         invalidIndex.Content.Headers.ContentType =
             new System.Net.Http.Headers.MediaTypeHeaderValue(ManifestMediaTypes.OciImageIndex1);
-        invalidIndex.Headers.Add("Docker-Content-Digest", "sha256:fallback");
+        invalidIndex.Headers.Add("Docker-Content-Digest", RegistryFixture.GetDigest(Encoding.UTF8.GetBytes(json)));
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/manifests/sha256-subject",
+            $"https://registry.example/v2/repository/manifests/{SubjectTag}",
             invalidIndex);
         using var client = new RegistryClient("registry.example", null, new HttpClient(handler));
 
         Page<OciImageIndex> page = await client.Referrers.GetAsync(
             "repository",
-            "sha256:subject",
+            SubjectDigest,
             "application/spdx+json");
 
         Assert.Empty(page.Value.Manifests);
@@ -335,18 +340,18 @@ public sealed class ReferrerOperationsTests
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/referrers/sha256:subject",
+            ReferrersUri,
             new HttpResponseMessage(HttpStatusCode.NotFound)
             {
                 Content = new StringContent("not json", Encoding.UTF8, "application/json")
             });
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/manifests/sha256-subject",
+            $"https://registry.example/v2/repository/manifests/{SubjectTag}",
             CreateIndexResponse());
         using var client = new RegistryClient("registry.example", null, new HttpClient(handler));
 
-        Page<OciImageIndex> page = await client.Referrers.GetAsync("repository", "sha256:subject");
+        Page<OciImageIndex> page = await client.Referrers.GetAsync("repository", SubjectDigest);
 
         Assert.Empty(page.Value.Manifests);
         Assert.Equal(0, handler.RemainingRequestCount);
@@ -358,7 +363,7 @@ public sealed class ReferrerOperationsTests
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/referrers/sha256:subject",
+            ReferrersUri,
             new HttpResponseMessage(HttpStatusCode.InternalServerError)
             {
                 Content = new StringContent("")
@@ -366,7 +371,7 @@ public sealed class ReferrerOperationsTests
         using var client = new RegistryClient("registry.example", null, new HttpClient(handler));
 
         RegistryException exception = await Assert.ThrowsAsync<RegistryException>(
-            () => client.Referrers.GetAsync("repository", "sha256:subject"));
+            () => client.Referrers.GetAsync("repository", SubjectDigest));
 
         Assert.Equal(HttpStatusCode.InternalServerError, exception.StatusCode);
         Assert.Equal(0, handler.RemainingRequestCount);
@@ -378,14 +383,14 @@ public sealed class ReferrerOperationsTests
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repository/referrers/sha256:subject",
+            ReferrersUri,
             CreateNotFoundResponse());
         using var client = new RegistryClient("registry.example", null, new HttpClient(handler));
         using CancellationTokenSource cancellation = new();
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => client.Referrers.GetAsync("repository", "sha256:subject", cancellationToken: cancellation.Token));
+            () => client.Referrers.GetAsync("repository", SubjectDigest, cancellationToken: cancellation.Token));
 
         Assert.Equal(1, handler.RemainingRequestCount);
     }
@@ -411,7 +416,8 @@ public sealed class ReferrerOperationsTests
             """{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}""");
         response.Content.Headers.ContentType =
             new System.Net.Http.Headers.MediaTypeHeaderValue(ManifestMediaTypes.OciImageIndex1);
-        response.Headers.Add("Docker-Content-Digest", "sha256:fallback");
+        response.Headers.Add("Docker-Content-Digest", RegistryFixture.GetDigest(Encoding.UTF8.GetBytes(
+            """{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}""")));
         return response;
     }
 }

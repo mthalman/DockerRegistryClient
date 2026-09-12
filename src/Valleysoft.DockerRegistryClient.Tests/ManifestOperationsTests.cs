@@ -12,6 +12,10 @@ namespace Valleysoft.DockerRegistryClient.Tests;
 
 public class ManifestOperationsTests
 {
+    private static readonly string ManifestDigest = RegistryFixture.GetDigest(Encoding.UTF8.GetBytes("{}"));
+    private const string SubjectDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    private const string SubjectTag = "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
     public static TheoryData<string, Type> SupportedManifestTypes => new()
     {
         { ManifestMediaTypes.DockerManifestSchema2, typeof(DockerManifest) },
@@ -50,7 +54,7 @@ public class ManifestOperationsTests
         var result = await client.Manifests.GetAsync("repo", "latest");
 
         Assert.Equal(mediaType, result.MediaType);
-        Assert.Equal("sha256:manifest", result.DockerContentDigest);
+        Assert.Equal(ManifestDigest, result.DockerContentDigest);
         Assert.IsType(expectedManifestType, result.Manifest);
         Assert.Equal("{}", Encoding.UTF8.GetString(result.Content.Span));
     }
@@ -70,7 +74,7 @@ public class ManifestOperationsTests
         ManifestInfo result = await client.Manifests.GetAsync("repo", "latest");
 
         Assert.Equal("application/vnd.example.unknown", result.MediaType);
-        Assert.Equal("sha256:manifest", result.DockerContentDigest);
+        Assert.Equal(RegistryFixture.GetDigest(content), result.DockerContentDigest);
         RawManifest manifest = Assert.IsType<RawManifest>(result.Manifest);
         Assert.Equal("application/vnd.example.unknown", manifest.MediaType);
         Assert.Equal(content, manifest.Content.ToArray());
@@ -104,7 +108,7 @@ public class ManifestOperationsTests
                 System.Text.Encoding.UTF8,
                 ManifestMediaTypes.OciManifestSchema1)
         };
-        response.Headers.Add("Docker-Content-Digest", "sha256:manifest");
+        response.Headers.Add("Docker-Content-Digest", RegistryFixture.GetDigest(Encoding.UTF8.GetBytes("not-json")));
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Get,
@@ -161,11 +165,11 @@ public class ManifestOperationsTests
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Head,
-            "https://registry.example/v2/repo/manifests/sha256:manifest",
+            $"https://registry.example/v2/repo/manifests/{ManifestDigest}",
             new HttpResponseMessage(statusCode));
         using var client = CreateClient(handler);
 
-        bool result = await client.Manifests.ExistsAsync("repo", "sha256:manifest");
+        bool result = await client.Manifests.ExistsAsync("repo", ManifestDigest);
 
         Assert.Equal(expected, result);
     }
@@ -174,7 +178,7 @@ public class ManifestOperationsTests
     public async Task GetDigestAsync_ReturnsDockerContentDigest()
     {
         var response = new HttpResponseMessage(HttpStatusCode.OK);
-        response.Headers.Add("Docker-Content-Digest", "sha256:manifest");
+        response.Headers.Add("Docker-Content-Digest", ManifestDigest);
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Head,
@@ -184,7 +188,7 @@ public class ManifestOperationsTests
 
         string digest = await client.Manifests.GetDigestAsync("repo", "latest");
 
-        Assert.Equal("sha256:manifest", digest);
+        Assert.Equal(ManifestDigest, digest);
     }
 
     [Fact]
@@ -371,7 +375,7 @@ public class ManifestOperationsTests
     {
         byte[] content = CreateSubjectManifestContent();
         HttpResponseMessage response = PublishResponse(content);
-        response.Headers.Add("OCI-Subject", "sha256:subject");
+        response.Headers.Add("OCI-Subject", SubjectDigest);
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Put,
@@ -401,7 +405,7 @@ public class ManifestOperationsTests
             response);
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repo/manifests/sha256-subject",
+            $"https://registry.example/v2/repo/manifests/{SubjectTag}",
             CreateManifestNotFoundResponse());
         handler.AddExpectedRequest(
             request =>
@@ -410,7 +414,7 @@ public class ManifestOperationsTests
                     request.Content!.ReadAsByteArrayAsync().GetAwaiter().GetResult());
                 JsonElement descriptor = document.RootElement.GetProperty("manifests")[0];
                 return request.Method == HttpMethod.Put &&
-                    request.RequestUri == new Uri("https://registry.example/v2/repo/manifests/sha256-subject") &&
+                    request.RequestUri == new Uri($"https://registry.example/v2/repo/manifests/{SubjectTag}") &&
                     request.Headers.IfNoneMatch.Any(value => value == EntityTagHeaderValue.Any) &&
                     request.Content.Headers.ContentType?.MediaType == ManifestMediaTypes.OciImageIndex1 &&
                     descriptor.GetProperty("mediaType").GetString() == ManifestMediaTypes.OciManifestSchema1 &&
@@ -444,7 +448,7 @@ public class ManifestOperationsTests
             PublishResponse());
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repo/manifests/sha256-subject",
+            $"https://registry.example/v2/repo/manifests/{SubjectTag}",
             CreateManifestNotFoundResponse());
         handler.AddExpectedRequest(
             request =>
@@ -487,7 +491,7 @@ public class ManifestOperationsTests
         };
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repo/manifests/sha256-subject",
+            $"https://registry.example/v2/repo/manifests/{SubjectTag}",
             fallbackResponse);
         using var client = CreateClient(handler);
 
@@ -513,7 +517,7 @@ public class ManifestOperationsTests
             PublishResponse(content));
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repo/manifests/sha256-subject",
+            $"https://registry.example/v2/repo/manifests/{SubjectTag}",
             ExistingFallbackResponse());
         handler.AddExpectedRequest(
             request =>
@@ -722,7 +726,7 @@ public class ManifestOperationsTests
             () => client.Manifests.DeleteAsync("repo", "latest"));
 
         Assert.Equal("digest", exception.ParamName);
-        Assert.Contains("Tags cannot be deleted", exception.Message);
+        Assert.Contains("valid digest", exception.Message);
     }
 
     [Theory]
@@ -950,7 +954,7 @@ public class ManifestOperationsTests
             subject = new
             {
                 mediaType = ManifestMediaTypes.OciManifestSchema1,
-                digest = "sha256:self",
+                digest = ManifestDigest,
                 size = 20
             }
         });
@@ -973,14 +977,14 @@ public class ManifestOperationsTests
             {
                 mediaType = "application/vnd.oci.empty.v1+json",
                 size = 2,
-                digest = "sha256:config"
+                digest = ManifestDigest
             },
             layers = Array.Empty<object>(),
             subject = new
             {
                 mediaType = ManifestMediaTypes.OciManifestSchema1,
                 size = 100,
-                digest = "sha256:subject"
+                digest = SubjectDigest
             },
             annotations = new Dictionary<string, string> { ["name"] = "test" }
         });
@@ -1001,7 +1005,8 @@ public class ManifestOperationsTests
             Content = new ByteArrayContent(content ?? Encoding.UTF8.GetBytes("{}"))
         };
         response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mediaType);
-        response.Headers.Add("Docker-Content-Digest", "sha256:manifest");
+        response.Headers.Add("Docker-Content-Digest",
+            RegistryFixture.GetDigest(content ?? Encoding.UTF8.GetBytes("{}")));
         return response;
     }
 

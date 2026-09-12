@@ -202,17 +202,18 @@ public class ListOperationsTests
     public async Task ReferrersGetAsync_IncludesArtifactTypeAndDeserializesIndex()
     {
         const string ArtifactType = "application/spdx+json";
+        string digest = RegistryFixture.GetDigest([1, 2, 3]);
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repo/referrers/sha256:abc?artifactType=application%2Fspdx%2Bjson",
+            $"https://registry.example/v2/repo/referrers/{digest}?artifactType=application%2Fspdx%2Bjson",
             JsonResponse(new OciImageIndex
             {
                 Manifests = [new ManifestReference { ArtifactType = ArtifactType }]
             }));
         using var client = CreateClient(handler);
 
-        Page<OciImageIndex> page = await client.Referrers.GetAsync("repo", "sha256:abc", ArtifactType);
+        Page<OciImageIndex> page = await client.Referrers.GetAsync("repo", digest, ArtifactType);
 
         Assert.Single(page.Value.Manifests);
         Assert.Equal(ArtifactType, page.Value.Manifests[0].ArtifactType);

@@ -7,6 +7,8 @@ namespace Valleysoft.DockerRegistryClient.Tests;
 
 public class BlobOperationsTests
 {
+    private static readonly string Digest = RegistryFixture.GetDigest([1, 2, 3, 4]);
+
     [Fact]
     public async Task GetAsync_ReturnedStreamOwnsResponseLifetime()
     {
@@ -14,14 +16,14 @@ public class BlobOperationsTests
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             request => request.Method == HttpMethod.Get &&
-                request.RequestUri == new Uri("https://registry.example/v2/repo/blobs/sha256:abc"),
+                request.RequestUri == new Uri($"https://registry.example/v2/repo/blobs/{Digest}"),
             new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StreamContent(body)
             });
         using var client = CreateClient(handler);
 
-        Stream result = await client.Blobs.GetAsync("repo", "sha256:abc");
+        Stream result = await client.Blobs.GetAsync("repo", Digest);
 
         Assert.True(body.CanRead);
         result.Dispose();
@@ -35,7 +37,7 @@ public class BlobOperationsTests
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repo/blobs/sha256:abc",
+            $"https://registry.example/v2/repo/blobs/{Digest}",
             new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StreamContent(body)
@@ -43,7 +45,7 @@ public class BlobOperationsTests
         using var client = CreateClient(handler);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => client.Blobs.GetAsync("repo", "sha256:abc"));
+            () => client.Blobs.GetAsync("repo", Digest));
     }
 
     [Fact]
@@ -59,13 +61,13 @@ public class BlobOperationsTests
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             request => request.Method == HttpMethod.Get &&
-                request.RequestUri == new Uri("https://registry.example/v2/repo/blobs/sha256:abc") &&
+                request.RequestUri == new Uri($"https://registry.example/v2/repo/blobs/{Digest}") &&
                 request.Headers.Range?.ToString() == "bytes=5-7" &&
                 request.Headers.AcceptEncoding.Single().Value == "identity",
             response);
         using var client = CreateClient(handler);
 
-        BlobDownloadResult result = await client.Blobs.GetRangeAsync("repo", "sha256:abc", 5, 3);
+        BlobDownloadResult result = await client.Blobs.GetRangeAsync("repo", Digest, 5, 3);
 
         Assert.True(result.IsRangeHonored);
         Assert.Equal(5, result.RangeStart);
@@ -90,7 +92,7 @@ public class BlobOperationsTests
             response);
         using var client = CreateClient(handler);
 
-        BlobDownloadResult result = await client.Blobs.GetRangeAsync("repo", "sha256:abc", 8);
+        BlobDownloadResult result = await client.Blobs.GetRangeAsync("repo", Digest, 8);
 
         Assert.True(result.IsRangeHonored);
         Assert.Equal(8, result.RangeStart);
@@ -112,7 +114,7 @@ public class BlobOperationsTests
             response);
         using var client = CreateClient(handler);
 
-        BlobDownloadResult result = await client.Blobs.GetRangeAsync("repo", "sha256:abc", 2, 2);
+        BlobDownloadResult result = await client.Blobs.GetRangeAsync("repo", Digest, 2, 2);
 
         Assert.False(result.IsRangeHonored);
         Assert.Equal(0, result.RangeStart);
@@ -135,7 +137,7 @@ public class BlobOperationsTests
         using var client = CreateClient(new MockHttpMessageHandler());
 
         ArgumentOutOfRangeException exception = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => client.Blobs.GetRangeAsync("repo", "sha256:abc", offset, length));
+            () => client.Blobs.GetRangeAsync("repo", Digest, offset, length));
 
         Assert.Equal(parameterName, exception.ParamName);
     }
@@ -157,7 +159,7 @@ public class BlobOperationsTests
             });
         using var client = CreateClient(handler);
 
-        BlobDownloadResult result = await client.Blobs.GetRangeAsync("repo", "sha256:abc", offset, length);
+        BlobDownloadResult result = await client.Blobs.GetRangeAsync("repo", Digest, offset, length);
 
         result.Content.Dispose();
     }
@@ -168,7 +170,7 @@ public class BlobOperationsTests
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repo/blobs/sha256:abc",
+            $"https://registry.example/v2/repo/blobs/{Digest}",
             new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable)
             {
                 Content = new StringContent("""{"errors":[{"code":"RANGE_INVALID","message":"invalid range"}]}""")
@@ -176,7 +178,7 @@ public class BlobOperationsTests
         using var client = CreateClient(handler);
 
         RegistryException exception = await Assert.ThrowsAsync<RegistryException>(
-            () => client.Blobs.GetRangeAsync("repo", "sha256:abc", 10));
+            () => client.Blobs.GetRangeAsync("repo", Digest, 10));
 
         Assert.Equal(HttpStatusCode.RequestedRangeNotSatisfiable, exception.StatusCode);
     }
@@ -188,7 +190,7 @@ public class BlobOperationsTests
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repo/blobs/sha256:abc",
+            $"https://registry.example/v2/repo/blobs/{Digest}",
             new HttpResponseMessage(HttpStatusCode.PartialContent)
             {
                 Content = new StreamContent(body)
@@ -196,7 +198,7 @@ public class BlobOperationsTests
         using var client = CreateClient(handler);
 
         InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => client.Blobs.GetRangeAsync("repo", "sha256:abc", 0, 3));
+            () => client.Blobs.GetRangeAsync("repo", Digest, 0, 3));
 
         Assert.Contains("Content-Range", exception.Message);
         Assert.False(body.CanRead);
@@ -213,12 +215,12 @@ public class BlobOperationsTests
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repo/blobs/sha256:abc",
+            $"https://registry.example/v2/repo/blobs/{Digest}",
             response);
         using var client = CreateClient(handler);
 
         InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => client.Blobs.GetRangeAsync("repo", "sha256:abc", 0, 2));
+            () => client.Blobs.GetRangeAsync("repo", Digest, 0, 2));
 
         Assert.Contains("inconsistent", exception.Message);
     }
@@ -246,7 +248,7 @@ public class BlobOperationsTests
 
         BlobDownloadResult result = await client.Blobs.GetRangeAsync(
             "repo",
-            "sha256:abc",
+            Digest,
             requestedStart,
             requestedEnd - requestedStart + 1);
 
@@ -264,7 +266,7 @@ public class BlobOperationsTests
         cancellationSource.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => client.Blobs.GetRangeAsync("repo", "sha256:abc", 0, cancellationToken: cancellationSource.Token));
+            () => client.Blobs.GetRangeAsync("repo", Digest, 0, cancellationToken: cancellationSource.Token));
     }
 
     [Fact]
@@ -280,11 +282,11 @@ public class BlobOperationsTests
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/v2/repo/blobs/sha256:abc",
+            $"https://registry.example/v2/repo/blobs/{Digest}",
             response);
         using var client = CreateClient(handler);
 
-        BlobDownloadResult result = await client.Blobs.GetRangeAsync("repo", "sha256:abc", 0, 3);
+        BlobDownloadResult result = await client.Blobs.GetRangeAsync("repo", Digest, 0, 3);
 
         result.Content.Dispose();
     }
@@ -320,15 +322,15 @@ public class BlobOperationsTests
             streamResponse);
 
         var endResponse = new HttpResponseMessage(HttpStatusCode.Created);
-        endResponse.Headers.Location = new Uri("/v2/repo/blobs/sha256:abc", UriKind.Relative);
-        endResponse.Headers.Add("Docker-Content-Digest", "sha256:abc");
+        endResponse.Headers.Location = new Uri($"/v2/repo/blobs/{Digest}", UriKind.Relative);
+        endResponse.Headers.Add("Docker-Content-Digest", Digest);
         handler.AddExpectedRequest(
             request =>
             {
                 byte[] content = request.Content!.ReadAsByteArrayAsync().GetAwaiter().GetResult();
                 return request.Method == HttpMethod.Put &&
                     request.RequestUri == new Uri(
-                        $"https://registry.example/v2/repo/blobs/uploads/upload-id?digest={Uri.EscapeDataString("sha256:abc")}") &&
+                        $"https://registry.example/v2/repo/blobs/uploads/upload-id?digest={Uri.EscapeDataString(Digest)}") &&
                     request.Headers.Authorization?.Parameter == "credential-token" &&
                     request.Content.Headers.ContentType?.MediaType == "application/octet-stream" &&
                     content.SequenceEqual(new byte[] { 4 });
@@ -348,14 +350,14 @@ public class BlobOperationsTests
             initialization.UploadContext);
         BlobUploadResult result = await client.Blobs.EndUploadAsync(
             streamResult.Location,
-            "sha256:abc",
+            Digest,
             initialization.UploadContext,
             new MemoryStream([4]));
 
         Assert.Equal(uploadId, initialization.UploadId);
         Assert.Equal(2, streamResult.RangeOffset);
-        Assert.Equal("/v2/repo/blobs/sha256:abc", result.Location);
-        Assert.Equal("sha256:abc", result.Digest);
+        Assert.Equal($"/v2/repo/blobs/{Digest}", result.Location);
+        Assert.Equal(Digest, result.Digest);
         Assert.Equal(0, handler.RemainingRequestCount);
     }
 

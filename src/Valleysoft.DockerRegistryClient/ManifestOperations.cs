@@ -2,7 +2,6 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Valleysoft.DockerRegistryClient.Models.Manifests;
 using Valleysoft.DockerRegistryClient.Models.Manifests.Docker;
 using Valleysoft.DockerRegistryClient.Models.Manifests.Oci;
@@ -14,12 +13,6 @@ internal class ManifestOperations : IManifestWriteOperations
     private const string NotFoundMessage = "Manifest not found.";
     private const string DockerContentDigestHeader = "Docker-Content-Digest";
     private const string OciSubjectHeader = "OCI-Subject";
-    private static readonly Regex DigestRegex = new(
-        @"\A[a-z0-9]+(?:[+._-][a-z0-9]+)*:[A-Za-z0-9=_-]+\z",
-        RegexOptions.CultureInvariant);
-    private static readonly Regex TagRegex = new(
-        @"\A[A-Za-z0-9_][A-Za-z0-9._-]{0,127}\z",
-        RegexOptions.CultureInvariant);
     private readonly SemaphoreSlim[] referrersFallbackLocks = Enumerable.Range(0, 32)
         .Select(_ => new SemaphoreSlim(1, 1))
         .ToArray();
@@ -53,9 +46,10 @@ internal class ManifestOperations : IManifestWriteOperations
             }).ConfigureAwait(false);
     }
 
-    public async Task<bool> ExistsAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default)
+    public async Task<bool> ExistsAsync(string repositoryName, string digest, CancellationToken cancellationToken = default)
     {
-        using HttpRequestMessage request = CreateGetRequestMessage(GetManifestUri(repositoryName, tagOrDigest), HttpMethod.Head);
+        RegistryReferenceValidator.ValidateReference(digest, nameof(digest));
+        using HttpRequestMessage request = CreateGetRequestMessage(GetManifestUri(repositoryName, digest), HttpMethod.Head);
         return await this.Client.SendExistsRequestAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
@@ -88,6 +82,8 @@ internal class ManifestOperations : IManifestWriteOperations
         string mediaType,
         CancellationToken cancellationToken = default)
     {
+        RegistryReferenceValidator.ValidateRepository(repositoryName, nameof(repositoryName));
+        RegistryReferenceValidator.ValidateReference(tagOrDigest, nameof(tagOrDigest));
         if (string.IsNullOrWhiteSpace(mediaType))
         {
             throw new ArgumentException("The manifest media type must be set.", nameof(mediaType));
@@ -165,15 +161,7 @@ internal class ManifestOperations : IManifestWriteOperations
         string digest,
         CancellationToken cancellationToken = default)
     {
-        if (digest is null)
-        {
-            throw new ArgumentNullException(nameof(digest));
-        }
-
-        if (!IsValidDigest(digest))
-        {
-            throw new ArgumentException("A valid manifest digest is required. Tags cannot be deleted.", nameof(digest));
-        }
+        RegistryReferenceValidator.ValidateDigest(digest, nameof(digest));
 
         StoredManifest manifest = await GetStoredManifestAsync(
             repositoryName,
@@ -207,22 +195,14 @@ internal class ManifestOperations : IManifestWriteOperations
         string tag,
         CancellationToken cancellationToken = default)
     {
-        if (tag is null)
-        {
-            throw new ArgumentNullException(nameof(tag));
-        }
-
-        if (!TagRegex.IsMatch(tag))
-        {
-            throw new ArgumentException("A valid manifest tag is required.", nameof(tag));
-        }
+        RegistryReferenceValidator.ValidateTag(tag, nameof(tag));
 
         using HttpRequestMessage request = new(HttpMethod.Delete, GetManifestUri(repositoryName, tag));
         await this.Client.SendRequestAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     private Uri GetManifestUri(string repositoryName, string tagOrDigest) =>
-        new(this.Client.BaseUri.AbsoluteUri + $"v2/{repositoryName}/manifests/{tagOrDigest}");
+        RegistryUriBuilder.Manifest(Client.BaseUri, repositoryName, tagOrDigest);
 
     private static HttpRequestMessage CreateGetRequestMessage(Uri requestUri, HttpMethod method)
     {
@@ -393,7 +373,7 @@ internal class ManifestOperations : IManifestWriteOperations
     {
         using HttpRequestMessage request = new(
             HttpMethod.Get,
-            $"{Client.BaseUri.AbsoluteUri}v2/{repositoryName}/referrers/{subjectDigest}");
+            RegistryUriBuilder.Referrers(Client.BaseUri, repositoryName, subjectDigest));
         try
         {
             using HttpResponseMessage response = await Client.SendRequestCoreAsync(
@@ -444,7 +424,7 @@ internal class ManifestOperations : IManifestWriteOperations
         descriptor.TryGetProperty("digest", out JsonElement digest) &&
         digest.ValueKind == JsonValueKind.String &&
         digest.GetString() is string digestValue &&
-        IsValidDigest(digestValue) &&
+        RegistryReferenceValidator.IsValidDigest(digestValue) &&
         descriptor.TryGetProperty("size", out JsonElement size) &&
         size.ValueKind == JsonValueKind.Number &&
         size.TryGetInt64(out long sizeValue) &&
@@ -493,7 +473,7 @@ internal class ManifestOperations : IManifestWriteOperations
             return responseDigest;
         }
 
-        if (IsValidDigest(tagOrDigest))
+        if (RegistryReferenceValidator.IsValidDigest(tagOrDigest))
         {
             VerifyDigestIfSupported(tagOrDigest, content);
             return tagOrDigest;
@@ -511,7 +491,7 @@ internal class ManifestOperations : IManifestWriteOperations
 
     private static bool VerifyDigestIfSupported(string digest, byte[] content)
     {
-        if (!IsValidDigest(digest))
+        if (!RegistryReferenceValidator.IsValidDigest(digest))
         {
             throw new InvalidOperationException($"Registry returned an invalid manifest digest '{digest}'.");
         }
@@ -542,33 +522,6 @@ internal class ManifestOperations : IManifestWriteOperations
 
         return true;
     }
-
-    internal static bool IsValidDigest(string digest)
-    {
-        if (string.IsNullOrEmpty(digest) || !DigestRegex.IsMatch(digest))
-        {
-            return false;
-        }
-
-        int separatorIndex = digest.IndexOf(':');
-        string algorithm = digest.Substring(0, separatorIndex);
-        string encoded = digest.Substring(separatorIndex + 1);
-        return algorithm switch
-        {
-            "sha256" => IsLowerHex(encoded, 64),
-            "sha384" => IsLowerHex(encoded, 96),
-            "sha512" => IsLowerHex(encoded, 128),
-            "blake3" => IsLowerHex(encoded, 64),
-            _ => true
-        };
-    }
-
-    internal static bool IsValidReference(string reference) =>
-        IsValidDigest(reference) || TagRegex.IsMatch(reference);
-
-    private static bool IsLowerHex(string value, int expectedLength) =>
-        value.Length == expectedLength &&
-        value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
 
     private static ManifestInfo GetResult(HttpResponseMessage response, byte[] content)
     {
