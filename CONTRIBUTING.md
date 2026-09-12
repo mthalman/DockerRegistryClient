@@ -9,9 +9,6 @@ behavior-changing contribution so that maintainers can confirm the approach.
 - Git
 - Docker, when running the live-registry integration tests
 
-The .NET 10 SDK builds all target frameworks: `netstandard2.0`, `net8.0`, and
-`net10.0`.
-
 ## Build and test
 
 Run these commands from the `src` directory:

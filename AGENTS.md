@@ -2,6 +2,8 @@
 
 ## Build
 
+Requires the .NET 10 SDK.
+
 All commands run from the `src/` directory:
 
 ```shell
@@ -9,7 +11,13 @@ dotnet restore
 dotnet build
 ```
 
-There is no test project in this repository.
+Run unit tests without Docker:
+
+```shell
+dotnet test --filter "Category!=Integration"
+```
+
+Integration tests use `--filter "Category=Integration"` and require Docker.
 
 ## Architecture
 
@@ -31,11 +39,10 @@ Paginated results are wrapped in `Page<T>`, which carries a `NextPageLink` for c
 
 ## Conventions
 
-- **Multi-targeting**: The project targets `netstandard2.0`, `net8.0`, and `net9.0`. Use `#if NET5_0_OR_GREATER` / `#if NETSTANDARD2_0` preprocessor directives when APIs differ across targets.
 - **Serialization**: Uses `System.Text.Json` exclusively (no Newtonsoft.Json).
 - **Async pattern**: All public API methods are async, accept an optional `CancellationToken`, and use `.ConfigureAwait(false)`.
 - **Error handling**: Unsuccessful HTTP responses throw `RegistryException` with `Errors` and `StatusCode` properties. Operations that check existence (e.g., `ExistsAsync`) return `true` for successful responses and `false` only for HTTP 404 Not Found; other unsuccessful responses throw `RegistryException`.
-- **C# language version**: 12.0 with nullable reference types and implicit usings enabled. `CompilerServices.cs` provides an `IsExternalInit` shim for `init` properties on netstandard2.0.
+- **C# language version**: 12.0 with nullable reference types and implicit usings enabled.
 - **Internal visibility**: Operation implementation classes are `internal`; only interfaces and models are public.
 
 ## Pull request labels
