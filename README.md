@@ -11,8 +11,7 @@ A .NET client library for the [OCI Distribution Spec](https://github.com/opencon
 dotnet add package Valleysoft.DockerRegistryClient
 ```
 
-The package provides assets for `netstandard2.0` and `net8.0`. Applications
-targeting .NET 10 use the compatible `net8.0` asset.
+Building from source requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 ## List repository tags
 

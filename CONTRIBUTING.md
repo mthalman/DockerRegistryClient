@@ -9,11 +9,6 @@ behavior-changing contribution so that maintainers can confirm the approach.
 - Git
 - Docker, when running the live-registry integration tests
 
-The .NET 10 SDK builds both library targets: `netstandard2.0` and `net8.0`.
-Tooling and tests use .NET 10. The test project targets `net10.0` and loads the
-compatible `net8.0` library asset; it does not run on the .NET 8 runtime.
-The `netstandard2.0` target is verified by compilation only.
-
 ## Build and test
 
 Run these commands from the `src` directory:
@@ -63,16 +58,14 @@ unit-test failure does not prevent integration-test execution. Each job uploads
 its TRX results, including on fork pull requests where test-report checks cannot
 be created. Integration tests do not contribute to the coverage report.
 
-Download the `unit-coverage-net8-on-net10` workflow artifact for the Cobertura
+Download the unit-test coverage artifact from the workflow run for the Cobertura
 report and `coverage-summary.md`. The workflow summary records line and branch
 coverage counts and percentages, the tested revision, runner OS, and test outcome.
 Artifacts are retained for 14 days. Available reports are also uploaded after
 test failures, but only successful runs establish a coverage baseline.
 
 No coverage threshold is enforced. Use successful CI measurements to establish
-an observed repository baseline before proposing a gate. These measurements
-cover the `net8.0` library on the .NET 10 runtime, not the .NET 8 runtime or the
-`netstandard2.0` conditional code paths.
+an observed repository baseline before proposing a gate.
 
 ## Submit a change
 
