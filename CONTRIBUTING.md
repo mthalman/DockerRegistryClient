@@ -21,7 +21,7 @@ Run these commands from the `src` directory:
 ```shell
 dotnet restore
 dotnet build
-dotnet test -f net10.0 --filter "Category!=Integration"
+dotnet test --filter "Category!=Integration"
 ```
 
 The build succeeds without warnings or errors, and `dotnet test` reports the
@@ -33,13 +33,13 @@ container through Testcontainers. Docker must be running; an unavailable Docker
 engine fails the test run rather than skipping these tests.
 
 ```shell
-dotnet test -f net10.0 --filter "Category=Integration"
+dotnet test --filter "Category=Integration"
 ```
 
 To run both the unit and integration tests:
 
 ```shell
-dotnet test -f net10.0
+dotnet test
 ```
 
 ## Collect unit-test coverage
@@ -49,7 +49,7 @@ From `src`, build in Release mode and run the same coverage command as CI:
 ```shell
 dotnet restore
 dotnet build -c Release --no-restore
-dotnet test -c Release -f net10.0 --no-restore --no-build --filter "Category!=Integration" --collect:"XPlat Code Coverage" --settings coverage.runsettings --logger "trx;LogFileName=unit-tests.trx" --results-directory TestResults/unit
+dotnet test -c Release --no-restore --no-build --filter "Category!=Integration" --collect:"XPlat Code Coverage" --settings coverage.runsettings --logger "trx;LogFileName=unit-tests.trx" --results-directory TestResults/unit
 ```
 
 `coverage.runsettings` selects Cobertura output for the production assembly only.

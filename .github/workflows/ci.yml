@@ -36,7 +36,7 @@ jobs:
       - name: Test unit tests
         id: unit-tests
         run: >-
-          dotnet test -c Release -f net10.0 --no-restore --no-build
+          dotnet test -c Release --no-restore --no-build
           --filter "Category!=Integration"
           --collect:"XPlat Code Coverage"
           --settings coverage.runsettings
@@ -149,7 +149,7 @@ jobs:
       - name: Test integration tests
         id: integration-tests
         run: >-
-          dotnet test -c Release -f net10.0 --no-restore --no-build
+          dotnet test -c Release --no-restore --no-build
           --filter "Category=Integration"
           --logger "trx;LogFileName=integration-tests.trx"
           --results-directory TestResults/integration

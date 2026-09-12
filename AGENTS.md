@@ -13,7 +13,7 @@ The test project targets `net10.0` and exercises the `net8.0` library asset.
 Run unit tests without Docker:
 
 ```shell
-dotnet test -f net10.0 --filter "Category!=Integration"
+dotnet test --filter "Category!=Integration"
 ```
 
 Integration tests use `--filter "Category=Integration"` and require Docker.
