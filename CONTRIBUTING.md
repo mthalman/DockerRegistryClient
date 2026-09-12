@@ -37,36 +37,6 @@ To run both the unit and integration tests:
 dotnet test
 ```
 
-## Collect unit-test coverage
-
-From `src`, build in Release mode and run the same coverage command as CI:
-
-```shell
-dotnet restore
-dotnet build -c Release --no-restore
-dotnet test -c Release --no-restore --no-build --filter "Category!=Integration" --collect:"XPlat Code Coverage" --settings coverage.runsettings --logger "trx;LogFileName=unit-tests.trx" --results-directory TestResults/unit
-```
-
-`coverage.runsettings` selects Cobertura output for the production assembly only.
-The report is written to `TestResults/unit/<run-id>/coverage.cobertura.xml`;
-test results are written to `TestResults/unit/unit-tests.trx`. Use an empty
-results directory for each measurement to avoid mixing reports from different
-runs.
-
-CI runs the build and unit tests separately from the integration-test job, so a
-unit-test failure does not prevent integration-test execution. Each job uploads
-its TRX results, including on fork pull requests where test-report checks cannot
-be created. Integration tests do not contribute to the coverage report.
-
-Download the unit-test coverage artifact from the workflow run for the Cobertura
-report and `coverage-summary.md`. The workflow summary records line and branch
-coverage counts and percentages, the tested revision, runner OS, and test outcome.
-Artifacts are retained for 14 days. Available reports are also uploaded after
-test failures, but only successful runs establish a coverage baseline.
-
-No coverage threshold is enforced. Use successful CI measurements to establish
-an observed repository baseline before proposing a gate.
-
 ## Submit a change
 
 1. Create a branch from the repository's default branch.

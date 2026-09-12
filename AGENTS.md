@@ -18,7 +18,6 @@ dotnet test --filter "Category!=Integration"
 ```
 
 Integration tests use `--filter "Category=Integration"` and require Docker.
-See `CONTRIBUTING.md` for coverage collection commands.
 
 ## Architecture
 
