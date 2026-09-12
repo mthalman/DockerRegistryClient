@@ -10,14 +10,16 @@ public class BlobOperationsExtensionsTests
     [Fact]
     public async Task GetImageAsync_ValidImageConfig_DeserializesAndDisposesStream()
     {
-        var stream = new MemoryStream(Encoding.UTF8.GetBytes(
-            """{"architecture":"amd64","os":"linux","rootfs":{"type":"layers","diff_ids":[]}}"""));
+        byte[] content = Encoding.UTF8.GetBytes(
+            """{"architecture":"amd64","os":"linux","rootfs":{"type":"layers","diff_ids":[]}}""");
+        string digest = RegistryFixture.GetDigest(content);
+        var stream = new MemoryStream(content);
         var operations = new Mock<IBlobOperations>();
         operations
-            .Setup(value => value.GetAsync("repo", "sha256:config", It.IsAny<CancellationToken>()))
+            .Setup(value => value.GetAsync("repo", digest, It.IsAny<CancellationToken>()))
             .ReturnsAsync(stream);
 
-        var image = await operations.Object.GetImageAsync("repo", "sha256:config");
+        var image = await operations.Object.GetImageAsync("repo", digest);
 
         Assert.Equal("amd64", image.Architecture);
         Assert.Equal("linux", image.Os);
@@ -27,13 +29,15 @@ public class BlobOperationsExtensionsTests
     [Fact]
     public async Task GetImageAsync_InvalidJson_ThrowsContextualJsonException()
     {
+        byte[] content = Encoding.UTF8.GetBytes("not-json");
+        string digest = RegistryFixture.GetDigest(content);
         var operations = new Mock<IBlobOperations>();
         operations
-            .Setup(value => value.GetAsync("repo", "sha256:layer", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new MemoryStream(Encoding.UTF8.GetBytes("not-json")));
+            .Setup(value => value.GetAsync("repo", digest, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MemoryStream(content));
 
         JsonException exception = await Assert.ThrowsAsync<JsonException>(
-            () => operations.Object.GetImageAsync("repo", "sha256:layer"));
+            () => operations.Object.GetImageAsync("repo", digest));
 
         Assert.Contains("Verify the digest represents an image config", exception.Message);
         Assert.IsType<JsonException>(exception.InnerException);
@@ -47,7 +51,8 @@ public class BlobOperationsExtensionsTests
             "/v2/repo/blobs/uploads/id",
             Guid.NewGuid(),
             context);
-        var expected = new BlobUploadResult("/v2/repo/blobs/sha256:abc", "sha256:abc");
+        string digest = RegistryFixture.GetDigest([1, 2, 3]);
+        var expected = new BlobUploadResult($"/v2/repo/blobs/{digest}", digest);
         using var stream = new MemoryStream([1, 2, 3]);
         var operations = new Mock<IBlobOperations>();
         operations
@@ -56,13 +61,13 @@ public class BlobOperationsExtensionsTests
         operations
             .Setup(value => value.EndUploadAsync(
                 initialization.Location,
-                "sha256:abc",
+                digest,
                 context,
                 stream,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(expected);
 
-        BlobUploadResult result = await operations.Object.UploadAsync("repo", stream, "sha256:abc");
+        BlobUploadResult result = await operations.Object.UploadAsync("repo", stream, digest);
 
         Assert.Same(expected, result);
         operations.VerifyAll();

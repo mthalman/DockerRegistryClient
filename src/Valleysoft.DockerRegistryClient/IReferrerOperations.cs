@@ -15,6 +15,8 @@ public interface IReferrerOperations
     /// <param name="artifactType">Artifact media type to filter by.</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
     /// <returns>A page containing an OCI image index of matching referrers.</returns>
+    /// <exception cref="ArgumentNullException">A required repository name or digest is null.</exception>
+    /// <exception cref="ArgumentException">The repository name or digest is invalid.</exception>
     Task<Page<OciImageIndex>> GetAsync(string repositoryName, string digest, string? artifactType = null, CancellationToken cancellationToken = default);
 
     /// <summary>

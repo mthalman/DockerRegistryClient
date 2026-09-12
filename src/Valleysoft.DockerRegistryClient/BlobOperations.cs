@@ -24,7 +24,7 @@ internal class BlobOperations : IBlobOperations
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
     public async Task<Stream> GetAsync(string repositoryName, string digest, CancellationToken cancellationToken = default)
     {
-        using HttpRequestMessage request = new(HttpMethod.Get, $"{this.Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/{digest}");
+        using HttpRequestMessage request = new(HttpMethod.Get, RegistryUriBuilder.Blob(Client.BaseUri, repositoryName, digest));
         HttpResponseMessage response = await this.Client.SendRequestCoreAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         BlobStream streamContentResponse = await OperationsHelper.HandleNotFoundErrorAsync(
@@ -96,7 +96,7 @@ internal class BlobOperations : IBlobOperations
     /// <exception cref="RegistryException">The registry returns an unsuccessful response other than HTTP 404 Not Found.</exception>
     public async Task<bool> ExistsAsync(string repositoryName, string digest, CancellationToken cancellationToken = default)
     {
-        using HttpRequestMessage request = new(HttpMethod.Head, $"{this.Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/{digest}");
+        using HttpRequestMessage request = new(HttpMethod.Head, RegistryUriBuilder.Blob(Client.BaseUri, repositoryName, digest));
         return await this.Client.SendExistsRequestAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
@@ -107,7 +107,7 @@ internal class BlobOperations : IBlobOperations
     {
         using HttpRequestMessage request = new(
             HttpMethod.Head,
-            $"{Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/{digest}");
+            RegistryUriBuilder.Blob(Client.BaseUri, repositoryName, digest));
         try
         {
             using HttpResponseMessage response = await Client.SendRequestCoreAsync(
@@ -132,7 +132,7 @@ internal class BlobOperations : IBlobOperations
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
     public async Task DeleteAsync(string repositoryName, string digest, CancellationToken cancellationToken = default)
     {
-        using HttpRequestMessage request = new(HttpMethod.Delete, $"{this.Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/{digest}");
+        using HttpRequestMessage request = new(HttpMethod.Delete, RegistryUriBuilder.Blob(Client.BaseUri, repositoryName, digest));
         await this.Client.SendRequestAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
@@ -174,7 +174,7 @@ internal class BlobOperations : IBlobOperations
     public async Task<BlobUploadInitializationResult> BeginUploadAsync(string repositoryName, CancellationToken cancellationToken = default)
     {
         using HttpRequestMessage request = new(HttpMethod.Post,
-            $"{Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/uploads/");
+            RegistryUriBuilder.Upload(Client.BaseUri, repositoryName));
 
         HttpResponseMessage response = await this.Client.SendRequestCoreAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -191,7 +191,7 @@ internal class BlobOperations : IBlobOperations
     {
         using HttpRequestMessage request = new(
             HttpMethod.Post,
-            $"{Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/uploads/");
+            RegistryUriBuilder.Upload(Client.BaseUri, repositoryName));
         using HttpResponseMessage response = await this.Client.SendRequestCoreAsync(
             request,
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -207,8 +207,7 @@ internal class BlobOperations : IBlobOperations
         string sourceRepositoryName,
         CancellationToken cancellationToken = default)
     {
-        string requestUri = $"{Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/uploads/" +
-            $"?mount={Uri.EscapeDataString(digest)}&from={Uri.EscapeDataString(sourceRepositoryName)}";
+        Uri requestUri = RegistryUriBuilder.Mount(Client.BaseUri, repositoryName, digest, sourceRepositoryName);
         using HttpRequestMessage request = new(HttpMethod.Post, requestUri);
 
         try
@@ -293,6 +292,7 @@ internal class BlobOperations : IBlobOperations
     /// </remarks>
     public async Task<BlobUploadResult> EndUploadAsync(string uploadLocation, string digest, BlobUploadContext uploadContext, Stream? stream = null, CancellationToken cancellationToken = default)
     {
+        RegistryReferenceValidator.ValidateDigest(digest, nameof(digest));
         HttpContent? content = stream is null ? null : CreateStreamContent(stream);
         return await EndUploadCoreAsync(
             uploadLocation,
@@ -322,9 +322,8 @@ internal class BlobOperations : IBlobOperations
         HttpContent? content,
         CancellationToken cancellationToken)
     {
-        Uri uri = new(Client.BaseUri, uploadLocation);
-        char uriAppendChar = string.IsNullOrEmpty(uri.Query) ? '?' : '&';
-        uri = new Uri($"{uri}{uriAppendChar}digest={Uri.EscapeDataString(digest)}");
+        RegistryReferenceValidator.ValidateDigest(digest, nameof(digest));
+        Uri uri = RegistryUriBuilder.AddQueryParameter(new Uri(Client.BaseUri, uploadLocation), "digest", digest);
 
         using HttpRequestMessage request = new(HttpMethod.Put, uri)
         {
@@ -373,7 +372,7 @@ internal class BlobOperations : IBlobOperations
     {
         HttpRequestMessage request = new(
             HttpMethod.Get,
-            $"{this.Client.BaseUri.AbsoluteUri}v2/{repositoryName}/blobs/{digest}");
+            RegistryUriBuilder.Blob(Client.BaseUri, repositoryName, digest));
         request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("identity"));
         return request;
     }

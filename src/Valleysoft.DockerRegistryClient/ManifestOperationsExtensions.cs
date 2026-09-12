@@ -59,6 +59,8 @@ public static class ManifestOperationsExtensions
             throw new ArgumentNullException(nameof(manifest));
         }
 
+        RegistryReferenceValidator.ValidateRepository(repositoryName, nameof(repositoryName));
+        RegistryReferenceValidator.ValidateReference(tagOrDigest, nameof(tagOrDigest));
         string mediaType = manifest.MediaType ??
             throw new ArgumentException("The manifest media type must be set.", nameof(manifest));
         if (string.IsNullOrWhiteSpace(mediaType))

@@ -510,7 +510,7 @@ public class RegistryClientTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => manifest
             ? client.Manifests.ExistsAsync("repo", "latest", cancellationTokenSource.Token)
-            : client.Blobs.ExistsAsync("repo", "sha256:abc", cancellationTokenSource.Token));
+            : client.Blobs.ExistsAsync("repo", RegistryFixture.GetDigest([1, 2, 3]), cancellationTokenSource.Token));
     }
 
     [Theory]
@@ -524,7 +524,7 @@ public class RegistryClientTests
 
         HttpRequestException actual = await Assert.ThrowsAsync<HttpRequestException>(() => manifest
             ? client.Manifests.ExistsAsync("repo", "latest")
-            : client.Blobs.ExistsAsync("repo", "sha256:abc"));
+            : client.Blobs.ExistsAsync("repo", RegistryFixture.GetDigest([1, 2, 3])));
 
         Assert.Same(expected, actual);
     }

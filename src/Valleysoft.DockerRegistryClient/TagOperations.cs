@@ -13,8 +13,8 @@ internal class TagOperations : ITagOperations
 
     public async Task<Page<RepositoryTags>> GetAsync(string repositoryName, int? count = null, CancellationToken cancellationToken = default)
     {
-        string url = UrlHelper.ApplyCount($"v2/{repositoryName}/tags/list", count);
-        return await GetNextAsync(url, cancellationToken);
+        Uri uri = RegistryUriBuilder.Tags(Client.BaseUri, repositoryName, count);
+        return await GetNextAsync(uri.AbsoluteUri, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<Page<RepositoryTags>> GetNextAsync(string nextPageLink, CancellationToken cancellationToken = default)

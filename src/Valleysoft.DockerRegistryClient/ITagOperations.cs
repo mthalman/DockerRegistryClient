@@ -14,6 +14,8 @@ public interface ITagOperations
     /// <param name="count">Maximum number of tags requested, or <see langword="null"/> to use the registry default.</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
     /// <returns>The first tag page and its continuation link, if any.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="repositoryName"/> is null.</exception>
+    /// <exception cref="ArgumentException"><paramref name="repositoryName"/> is invalid.</exception>
     Task<Page<RepositoryTags>> GetAsync(
         string repositoryName, int? count = null, CancellationToken cancellationToken = default);
 

@@ -14,6 +14,8 @@ public interface IManifestOperations
     /// <param name="tagOrDigest">Manifest tag or digest.</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
     /// <returns>The parsed manifest together with its media type, digest, and original content.</returns>
+    /// <exception cref="ArgumentNullException">A required repository name or reference is null.</exception>
+    /// <exception cref="ArgumentException">The repository name, tag, or digest is invalid.</exception>
     Task<ManifestInfo> GetAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -23,6 +25,8 @@ public interface IManifestOperations
     /// <param name="digest">Manifest tag or digest.</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
     /// <returns><see langword="true"/> for a successful response; <see langword="false"/> for HTTP 404 Not Found.</returns>
+    /// <exception cref="ArgumentNullException">A required repository name or reference is null.</exception>
+    /// <exception cref="ArgumentException">The repository name, tag, or digest is invalid.</exception>
     /// <exception cref="RegistryException">The registry returns an unsuccessful response other than HTTP 404 Not Found.</exception>
     Task<bool> ExistsAsync(string repositoryName, string digest, CancellationToken cancellationToken = default);
 
@@ -33,5 +37,7 @@ public interface IManifestOperations
     /// <param name="tagOrDigest">Manifest tag or digest.</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
     /// <returns>The digest from the registry's <c>Docker-Content-Digest</c> response header.</returns>
+    /// <exception cref="ArgumentNullException">A required repository name or reference is null.</exception>
+    /// <exception cref="ArgumentException">The repository name, tag, or digest is invalid.</exception>
     Task<string> GetDigestAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default);
 }
