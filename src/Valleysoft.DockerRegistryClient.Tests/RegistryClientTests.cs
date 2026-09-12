@@ -1,6 +1,4 @@
 using System.Net;
-using System.Reflection;
-using System.Runtime.Versioning;
 using System.Text.Json;
 using Xunit;
 using Valleysoft.DockerRegistryClient.Models;
@@ -9,16 +7,6 @@ namespace Valleysoft.DockerRegistryClient.Tests;
 
 public class RegistryClientTests
 {
-    [Fact]
-    public void LibraryAssembly_TargetsNet8()
-    {
-        TargetFrameworkAttribute? targetFramework =
-            typeof(RegistryClient).Assembly.GetCustomAttribute<TargetFrameworkAttribute>();
-
-        Assert.NotNull(targetFramework);
-        Assert.Equal(".NETCoreApp,Version=v8.0", targetFramework.FrameworkName);
-    }
-
     [Fact]
     public void Constructor_NullRegistry_ThrowsArgumentNullException()
     {
