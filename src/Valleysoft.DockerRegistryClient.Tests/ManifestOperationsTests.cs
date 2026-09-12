@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Valleysoft.DockerRegistryClient.Models;
 using Valleysoft.DockerRegistryClient.Models.Manifests;
 using Valleysoft.DockerRegistryClient.Models.Manifests.Docker;
 using Valleysoft.DockerRegistryClient.Models.Manifests.Oci;
@@ -158,20 +159,78 @@ public class ManifestOperationsTests
     }
 
     [Theory]
-    [InlineData(HttpStatusCode.OK, true)]
-    [InlineData(HttpStatusCode.NotFound, false)]
-    public async Task ExistsAsync_ReturnsResponseSuccessState(HttpStatusCode statusCode, bool expected)
+    [InlineData(HttpStatusCode.OK, true, "")]
+    [InlineData(HttpStatusCode.NoContent, true, "")]
+    [InlineData(HttpStatusCode.NotFound, false, "")]
+    [InlineData(HttpStatusCode.NotFound, false, null)]
+    [InlineData(HttpStatusCode.NotFound, false, """{"errors":[{"code":"MANIFEST_UNKNOWN","message":"manifest unknown"}]}""")]
+    public async Task ExistsAsync_SuccessOrNotFound_ReturnsExpectedResult(
+        HttpStatusCode statusCode, bool expected, string? content)
     {
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Head,
             $"https://registry.example/v2/repo/manifests/{ManifestDigest}",
-            new HttpResponseMessage(statusCode));
+            new HttpResponseMessage(statusCode)
+            {
+                Content = content is null ? null : new StringContent(content)
+            });
         using var client = CreateClient(handler);
 
         bool result = await client.Manifests.ExistsAsync("repo", ManifestDigest);
 
         Assert.Equal(expected, result);
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task ExistsAsync_Non404FailureWithoutBody_ThrowsRegistryException(HttpStatusCode statusCode)
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Head,
+            "https://registry.example/v2/repo/manifests/latest",
+            new HttpResponseMessage(statusCode));
+        using var client = CreateClient(handler);
+
+        RegistryException exception = await Assert.ThrowsAsync<RegistryException>(
+            () => client.Manifests.ExistsAsync("repo", "latest"));
+
+        Assert.Equal(statusCode, exception.StatusCode);
+        Assert.Empty(exception.Errors);
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task ExistsAsync_StructuredError_PreservesRegistryErrorDetails()
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Head,
+            "https://registry.example/v2/repo/manifests/latest",
+            new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = new StringContent(
+                    """{"errors":[{"code":"DENIED","message":"access denied","detail":{"repository":"repo"}}]}""",
+                    Encoding.UTF8,
+                    "application/json")
+            });
+        using var client = CreateClient(handler);
+
+        RegistryException exception = await Assert.ThrowsAsync<RegistryException>(
+            () => client.Manifests.ExistsAsync("repo", "latest"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, exception.StatusCode);
+        Error error = Assert.Single(exception.Errors);
+        Assert.Equal("DENIED", error.Code);
+        Assert.Equal("access denied", error.Message);
+        JsonElement detail = Assert.IsType<JsonElement>(error.Detail);
+        Assert.Equal("repo", detail.GetProperty("repository").GetString());
     }
 
     [Fact]

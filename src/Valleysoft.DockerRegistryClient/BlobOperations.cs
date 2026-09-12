@@ -92,7 +92,8 @@ internal class BlobOperations : IBlobOperations
     /// <param name="repositoryName">Name of the repository the blob belongs to.</param>
     /// <param name="digest">Digest of the blob (e.g. "sha256:&lt;value&gt;").</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
-    /// <returns>true if the blob exists; otherwise, false.</returns>
+    /// <returns><see langword="true"/> for a successful response; <see langword="false"/> for HTTP 404 Not Found.</returns>
+    /// <exception cref="RegistryException">The registry returns an unsuccessful response other than HTTP 404 Not Found.</exception>
     public async Task<bool> ExistsAsync(string repositoryName, string digest, CancellationToken cancellationToken = default)
     {
         using HttpRequestMessage request = new(HttpMethod.Head, RegistryUriBuilder.Blob(Client.BaseUri, repositoryName, digest));

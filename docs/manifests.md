@@ -105,8 +105,9 @@ responses.
 bool exists = await client.Manifests.ExistsAsync("dotnet/sdk", "latest");
 ```
 
-`ExistsAsync` accepts a tag or digest and returns `false` for any non-success
-HTTP status.
+`ExistsAsync` accepts a tag or digest. It returns `true` for successful HTTP
+responses and `false` only for `404 Not Found`. Other non-success responses
+throw `RegistryException`; see [Error Handling](error-handling.md).
 
 ## Get a digest
 

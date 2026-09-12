@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text.Json;
 using Valleysoft.DockerRegistryClient.Credentials;
+using Valleysoft.DockerRegistryClient.Models;
 using Xunit;
 
 namespace Valleysoft.DockerRegistryClient.Tests;
@@ -8,6 +10,81 @@ namespace Valleysoft.DockerRegistryClient.Tests;
 public class BlobOperationsTests
 {
     private static readonly string Digest = RegistryFixture.GetDigest([1, 2, 3, 4]);
+
+    [Theory]
+    [InlineData(HttpStatusCode.OK, true, "")]
+    [InlineData(HttpStatusCode.NoContent, true, "")]
+    [InlineData(HttpStatusCode.NotFound, false, "")]
+    [InlineData(HttpStatusCode.NotFound, false, null)]
+    [InlineData(HttpStatusCode.NotFound, false, """{"errors":[{"code":"BLOB_UNKNOWN","message":"blob unknown"}]}""")]
+    public async Task ExistsAsync_SuccessOrNotFound_ReturnsExpectedResult(
+        HttpStatusCode statusCode, bool expected, string? content)
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Head,
+            $"https://registry.example/v2/repo/blobs/{Digest}",
+            new HttpResponseMessage(statusCode)
+            {
+                Content = content is null ? null : new StringContent(content)
+            });
+        using var client = CreateClient(handler);
+
+        bool result = await client.Blobs.ExistsAsync("repo", Digest);
+
+        Assert.Equal(expected, result);
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task ExistsAsync_Non404FailureWithoutBody_ThrowsRegistryException(HttpStatusCode statusCode)
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Head,
+            $"https://registry.example/v2/repo/blobs/{Digest}",
+            new HttpResponseMessage(statusCode));
+        using var client = CreateClient(handler);
+
+        RegistryException exception = await Assert.ThrowsAsync<RegistryException>(
+            () => client.Blobs.ExistsAsync("repo", Digest));
+
+        Assert.Equal(statusCode, exception.StatusCode);
+        Assert.Empty(exception.Errors);
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task ExistsAsync_StructuredError_PreservesRegistryErrorDetails()
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Head,
+            $"https://registry.example/v2/repo/blobs/{Digest}",
+            new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = new StringContent(
+                    """{"errors":[{"code":"DENIED","message":"access denied","detail":{"repository":"repo"}}]}""",
+                    System.Text.Encoding.UTF8,
+                    "application/json")
+            });
+        using var client = CreateClient(handler);
+
+        RegistryException exception = await Assert.ThrowsAsync<RegistryException>(
+            () => client.Blobs.ExistsAsync("repo", Digest));
+
+        Assert.Equal(HttpStatusCode.Forbidden, exception.StatusCode);
+        Error error = Assert.Single(exception.Errors);
+        Assert.Equal("DENIED", error.Code);
+        Assert.Equal("access denied", error.Message);
+        JsonElement detail = Assert.IsType<JsonElement>(error.Detail);
+        Assert.Equal("repo", detail.GetProperty("repository").GetString());
+    }
 
     [Fact]
     public async Task GetAsync_ReturnedStreamOwnsResponseLifetime()

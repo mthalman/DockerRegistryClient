@@ -136,7 +136,9 @@ configuration.
 bool exists = await client.Blobs.ExistsAsync("myrepo", "sha256:abc123...");
 ```
 
-`ExistsAsync` returns `false` for any non-success HTTP status.
+`ExistsAsync` returns `true` for successful HTTP responses and `false` only for
+`404 Not Found`. Other non-success responses throw `RegistryException`; see
+[Error Handling](error-handling.md).
 
 ## Delete a blob
 

@@ -205,13 +205,15 @@ public class RegistryClientTests
         Assert.Equal("second error", ex.Errors.Last().Message);
     }
 
-    [Fact]
-    public async Task SendRequestCoreAsync_ErrorWithEmptyContent_ThrowsRegistryException()
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task SendRequestCoreAsync_ErrorWithEmptyOrMissingContent_ThrowsRegistryException(string? content)
     {
         var mockHandler = new MockHttpMessageHandler();
         var response = new HttpResponseMessage(HttpStatusCode.InternalServerError)
         {
-            Content = new StringContent("")
+            Content = content is null ? null : new StringContent(content)
         };
         mockHandler.AddExpectedRequest(HttpMethod.Get, "https://myregistry.io/v2/", response);
         
@@ -461,6 +463,77 @@ public class RegistryClientTests
         
         var request = new HttpRequestMessage(HttpMethod.Get, "https://myregistry.io/v2/test");
         await Assert.ThrowsAsync<JsonException>(() => client.SendRequestAsync<Catalog>(request));
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.OK)]
+    [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task SendExistsRequestAsync_DisposesResponse(HttpStatusCode statusCode)
+    {
+        using var body = new MemoryStream();
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Head,
+            "https://registry.example/v2/repo/blobs/sha256:abc",
+            new HttpResponseMessage(statusCode)
+            {
+                Content = new StreamContent(body)
+            });
+        using var client = new RegistryClient(
+            "registry.example", null, new HttpClient(handler), disposeHttpClient: true);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Head, "https://registry.example/v2/repo/blobs/sha256:abc");
+
+        if (statusCode == HttpStatusCode.Forbidden)
+        {
+            await Assert.ThrowsAsync<RegistryException>(() => client.SendExistsRequestAsync(request));
+        }
+        else
+        {
+            Assert.Equal(statusCode == HttpStatusCode.OK, await client.SendExistsRequestAsync(request));
+        }
+
+        Assert.False(body.CanRead);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExistsAsync_PreCanceledToken_DoesNotSendRequest(bool manifest)
+    {
+        var handler = new MockHttpMessageHandler();
+        using var client = new RegistryClient(
+            "registry.example", null, new HttpClient(handler), disposeHttpClient: true);
+        using var cancellationTokenSource = new CancellationTokenSource();
+        cancellationTokenSource.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => manifest
+            ? client.Manifests.ExistsAsync("repo", "latest", cancellationTokenSource.Token)
+            : client.Blobs.ExistsAsync("repo", RegistryFixture.GetDigest([1, 2, 3]), cancellationTokenSource.Token));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExistsAsync_TransportFailure_PropagatesException(bool manifest)
+    {
+        var expected = new HttpRequestException("Connection failed.");
+        using var client = new RegistryClient(
+            "registry.example", null, new HttpClient(new FailingHttpMessageHandler(expected)), disposeHttpClient: true);
+
+        HttpRequestException actual = await Assert.ThrowsAsync<HttpRequestException>(() => manifest
+            ? client.Manifests.ExistsAsync("repo", "latest")
+            : client.Blobs.ExistsAsync("repo", RegistryFixture.GetDigest([1, 2, 3])));
+
+        Assert.Same(expected, actual);
+    }
+
+    private sealed class FailingHttpMessageHandler(Exception exception) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromException<HttpResponseMessage>(exception);
     }
 
     private sealed class ThrowOnReadContent : HttpContent

@@ -24,9 +24,10 @@ public interface IManifestOperations
     /// <param name="repositoryName">Name of the repository containing the manifest.</param>
     /// <param name="digest">Manifest tag or digest.</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
-    /// <returns><see langword="true"/> when the registry returns a successful response; otherwise, <see langword="false"/>.</returns>
+    /// <returns><see langword="true"/> for a successful response; <see langword="false"/> for HTTP 404 Not Found.</returns>
     /// <exception cref="ArgumentNullException">A required repository name or reference is null.</exception>
     /// <exception cref="ArgumentException">The repository name, tag, or digest is invalid.</exception>
+    /// <exception cref="RegistryException">The registry returns an unsuccessful response other than HTTP 404 Not Found.</exception>
     Task<bool> ExistsAsync(string repositoryName, string digest, CancellationToken cancellationToken = default);
 
     /// <summary>
