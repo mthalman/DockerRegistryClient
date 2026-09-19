@@ -47,6 +47,14 @@ Paginated results are wrapped in `Page<T>`, which carries a `NextPageLink` for c
 
 ## Pull request labels
 
+Follow the pinned [release-automation author guide](https://github.com/mthalman/release-automation/blob/90551757fe8b061d4dff1a4cab12f10e58f07201/docs/author-guide.md).
+The callers currently use the toolkit defaults, with no `config-path`.
+Before choosing labels or fragment paths, check the callers at the trusted PR
+base (or the actual default branch when preparing a PR). If a `config-path`
+is added, resolve that commit's configuration and use its label roles and paths
+instead of assuming the defaults below. Proposed PR configuration does not
+control its own policy check.
+
 Every pull request must have exactly one semantic-version label, selected by the
 highest-impact public change:
 
@@ -75,3 +83,12 @@ that users or maintainers should know about.
 
 After creating a pull request, apply the labels on GitHub and verify them before
 considering pull request creation complete.
+Recheck labels when the scope changes and remove conflicting version or category
+labels. If label permissions are unavailable or release impact is unclear,
+report that for maintainer review.
+
+Breaking changes also require a new, completed
+`.changes/+short-kebab-slug.breaking.md` fragment, following the
+[fragment template](https://github.com/mthalman/release-automation/blob/90551757fe8b061d4dff1a4cab12f10e58f07201/docs/fragment-template.md).
+Never combine `semver:major` with `skip-changelog`. Retain fragments after
+release; editing an existing fragment does not satisfy a new breaking change.
