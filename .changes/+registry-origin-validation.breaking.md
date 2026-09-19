@@ -1,5 +1,10 @@
 ### Supply registry origins and valid resource references
 
+`RegistryClient` now rejects registry URLs with non-root paths, queries, or
+fragments instead of silently discarding those components. Registry operations
+also reject invalid repository names, tags, and digests locally. Update affected
+configuration and resource arguments before upgrading.
+
 #### Previous behavior
 
 In v6.2.0, `RegistryClient` parsed the `registry` argument as an absolute URI

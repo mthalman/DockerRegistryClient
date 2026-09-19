@@ -1,5 +1,9 @@
 ### Read schema versions from typed manifests
 
+`IManifest` no longer exposes `SchemaVersion`, allowing manifest formats that
+have no schema-version field. Code that reads the removed interface property
+must use a typed model or handle raw content explicitly, then be rebuilt.
+
 #### Previous behavior
 
 In v6.2.0, `IManifest` exposed `int SchemaVersion { get; }`. Callers could

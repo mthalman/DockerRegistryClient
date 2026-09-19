@@ -1,5 +1,9 @@
 ### Distinguish missing resources from failed existence checks
 
+Blob and manifest `ExistsAsync` checks now return `false` only for HTTP 404.
+Other unsuccessful HTTP responses throw `RegistryException`, so callers must
+distinguish failed requests from missing resources.
+
 #### Previous behavior
 
 In v6.2.0, the built-in blob and manifest `ExistsAsync` methods returned

@@ -1,5 +1,9 @@
 ### Implement ranged downloads on custom blob operations
 
+`IBlobOperations` now requires `GetRangeAsync`. Custom implementations,
+decorators, and test doubles must add the member and be rebuilt. Callers using
+the built-in `RegistryClient.Blobs.GetAsync` need no changes for this addition.
+
 #### Previous behavior
 
 In v6.2.0, `IBlobOperations` required `GetAsync` for full blob downloads but
