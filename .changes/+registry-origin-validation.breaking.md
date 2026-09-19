@@ -56,9 +56,16 @@ consistent argument errors across registry operations.
 
 #### Recommended action
 
-Update registry configuration to store only the intended origin. Replace
+Confirm that the intended registry serves its API at `/v2/` on the configured
+host. If a reverse proxy exposes the registry only under a custom path prefix,
+configure an origin that serves the API at `/v2/` first. The client does not
+support a custom base-path prefix; the old behavior discarded that prefix.
+Do not silently strip arbitrary URLs at runtime to bypass validation.
+
+Then update registry configuration to store only the intended origin, removing
+accidental path, query, and fragment suffixes. For example, replace
 `https://registry.example/v2/` with `https://registry.example` or
-`https://registry.example/`; the client adds `/v2/` to registry API requests:
+`https://registry.example/`. The client adds `/v2/` to registry API requests:
 
 ```csharp
 using Valleysoft.DockerRegistryClient;
@@ -68,17 +75,24 @@ string digest = await client.Manifests.GetDigestAsync(
     "team/image", "latest").ConfigureAwait(false);
 ```
 
-Remove accidental path, query, and fragment suffixes from configuration only
-after confirming the intended registry. Do not silently strip arbitrary URLs
-at runtime to bypass validation. If a reverse proxy exposes the registry only
-under a custom path prefix, configure an origin that serves the registry API
-at `/v2/`; custom base-path hosting was not implemented by the old truncation.
 Pass authentication through `IRegistryClientCredentials`, such as
 `BasicAuthenticationCredentials` or `TokenCredentials`, using a
 credential-taking constructor rather than embedding user information in a URL.
 Retain an explicit `http://` only when that is the intended transport.
 
-Supply resource arguments separately as raw, unescaped values:
+Pass repository names such as `team/image` separately from the registry origin.
+Use valid tags and complete digests without URL-encoding them. Replace
+abbreviated digest fixtures with digests computed from the fixture content;
+do not pad abbreviated values such as `sha256:abc`.
+
+For example, resolve a manifest tag with `GetDigestAsync` as above, then pass
+the resulting digest to operations that require it. Blob operations need the
+blob's own digest, not its parent manifest's digest. Update invalid fixtures
+and configuration inputs rather than catching argument errors and continuing.
+Keep server-issued pagination and upload links intact; they are URI references,
+not constructor origins or repository-name arguments.
+
+The accepted resource-reference formats are:
 
 - Repository names are at most 255 characters and contain slash-separated
   lowercase alphanumeric components. Within a component, alphanumeric runs
@@ -93,14 +107,7 @@ Supply resource arguments separately as raw, unescaped values:
   alphanumeric runs separated by a single `+`, `.`, `_`, or `-`, with a
   nonempty encoded value containing only ASCII letters, digits, `=`, `_`, or
   `-`. Use a complete digest returned by the registry or computed from the
-  actual content; do not pad an abbreviated value such as `sha256:abc`.
-
-For example, resolve a manifest tag with `GetDigestAsync` as above, then pass
-the resulting digest to operations that require it. Blob operations need the
-blob's own digest, not its parent manifest's digest. Update invalid fixtures
-and configuration inputs rather than catching argument errors and continuing.
-Keep server-issued pagination and upload links intact; they are URI references,
-not constructor origins or repository-name arguments.
+  actual content.
 
 #### Affected APIs
 

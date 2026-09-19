@@ -4,8 +4,9 @@
 
 In v6.2.0, `IManifest` exposed `int SchemaVersion { get; }`. Callers could
 read `manifestInfo.Manifest.SchemaVersion` without checking the manifest type.
-`IManifestOperations.GetAsync` returned a built-in Docker or OCI model and
-rejected unrecognized response media types with `NotSupportedException`.
+`IManifestOperations.GetAsync` returned a `ManifestInfo` whose `Manifest`
+property contained a built-in Docker or OCI model. It rejected unrecognized
+response media types with `NotSupportedException`.
 
 #### New behavior
 
@@ -14,11 +15,12 @@ rejected unrecognized response media types with `NotSupportedException`.
 The existing typed models still inherit the public, read/write
 `Manifest.SchemaVersion` property.
 
-For unrecognized response media types, `GetAsync` now returns a `RawManifest`
-instead of rejecting the format. `RawManifest` implements `IManifest`, not
-`Manifest`, and exposes `MediaType` and `Content`, with no schema-version
-property. Results retrieved through `GetAsync` also preserve the original bytes
-in `ManifestInfo.Content`, including for recognized formats.
+For unrecognized response media types, `GetAsync` now returns a `ManifestInfo`
+whose `Manifest` property contains a `RawManifest`, instead of throwing
+`NotSupportedException`. `RawManifest` implements `IManifest`, not `Manifest`,
+and exposes `MediaType` and `Content`, with no schema-version property.
+Results retrieved through `GetAsync` also preserve the original bytes in
+`ManifestInfo.Content`, including for recognized formats.
 
 #### Type of breaking change
 
