@@ -5,24 +5,47 @@ on:
     tags:
       - 'v*'
 
-defaults:
-  run:
-    working-directory: src
+permissions:
+  contents: read
+
+concurrency:
+  group: release-drafter
+  cancel-in-progress: false
+  queue: max
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      context: ${{ steps.prepare.outputs.context }}
+      tag: ${{ steps.prepare.outputs.tag }}
+      version: ${{ steps.prepare.outputs.version }}
+      sha: ${{ steps.prepare.outputs.sha }}
+      already-published: ${{ steps.prepare.outputs.already-published }}
+
+    steps:
+      - name: Prepare release
+        id: prepare
+        uses: mthalman/release-automation/actions/prepare-release@90551757fe8b061d4dff1a4cab12f10e58f07201 # v1.0.1
+
   validate:
+    needs: prepare
+    if: needs.prepare.outputs.already-published != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-
-    outputs:
-      prerelease: ${{ steps.version.outputs.prerelease }}
-      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        working-directory: src
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ needs.prepare.outputs.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup .NET Core SDK
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -55,31 +78,23 @@ jobs:
           Valleysoft.DockerRegistryClient
 
       - name: Validate package version
-        id: version
         shell: bash
+        env:
+          PACKAGE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          expected_version="${GITHUB_REF_NAME#v}"
-          expected_package="artifacts/Valleysoft.DockerRegistryClient.${expected_version}.nupkg"
+          expected_package="artifacts/Valleysoft.DockerRegistryClient.${PACKAGE_VERSION}.nupkg"
           shopt -s nullglob
           packages=(artifacts/*.nupkg)
 
-          if [[ "$GITHUB_REF_NAME" == "$expected_version" || ${#packages[@]} -ne 1 || "${packages[0]}" != "$expected_package" ]]; then
-            echo "::error::Tag '$GITHUB_REF_NAME' does not match the MinVer package: ${packages[*]:-none}."
+          if [[ ${#packages[@]} -ne 1 || "${packages[0]}" != "$expected_package" ]]; then
+            echo "::error::Prepared version '$PACKAGE_VERSION' does not match the MinVer package: ${packages[*]:-none}."
             exit 1
-          fi
-
-          echo "version=$expected_version" >> "$GITHUB_OUTPUT"
-
-          if [[ "$expected_version" == *-* ]]; then
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Upload packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: nuget-packages-${{ steps.version.outputs.version }}
+          name: nuget-packages-${{ needs.prepare.outputs.version }}
           path: |
             src/artifacts/*.nupkg
             src/artifacts/*.snupkg
@@ -87,12 +102,10 @@ jobs:
           retention-days: 1
 
   publish:
-    needs: validate
+    needs: [prepare, validate]
+    if: needs.prepare.outputs.already-published != 'true'
     runs-on: ubuntu-latest
     environment: nuget.org
-    concurrency:
-      group: nuget-release
-      queue: max
     permissions:
       contents: write
       id-token: write
@@ -101,35 +114,8 @@ jobs:
       - name: Download packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: nuget-packages-${{ needs.validate.outputs.version }}
+          name: nuget-packages-${{ needs.prepare.outputs.version }}
           path: src/artifacts
-
-      - name: Resolve GitHub Release
-        id: release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          release_state="$(
-            gh api --paginate --slurp \
-              "repos/${GITHUB_REPOSITORY}/releases?per_page=100" |
-              jq -r --arg tag "$GITHUB_REF_NAME" '
-                [.[][] | select(.draft == false and .tag_name == $tag)] as $published |
-                [.[][] | select(.draft)] as $drafts |
-                if ($published | length) == 1 then
-                  "published:\($published[0].id)"
-                elif ($published | length) > 1 then
-                  error("Multiple releases exist for tag \($tag).")
-                elif ($drafts | length) == 1 then
-                  "draft:\($drafts[0].id)"
-                else
-                  error("Expected exactly one draft release, but found \($drafts | length).")
-                end
-              '
-          )"
-
-          echo "id=${release_state#*:}" >> "$GITHUB_OUTPUT"
-          echo "state=${release_state%%:*}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to NuGet.org
         id: nuget-login
@@ -138,9 +124,10 @@ jobs:
           user: thalman
 
       - name: Publish Package
+        working-directory: src
         env:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
-          PACKAGE_VERSION: ${{ needs.validate.outputs.version }}
+          PACKAGE_VERSION: ${{ needs.prepare.outputs.version }}
         run: >-
           dotnet nuget push
           "artifacts/Valleysoft.DockerRegistryClient.${PACKAGE_VERSION}.nupkg"
@@ -148,40 +135,19 @@ jobs:
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
 
-      - name: Publish GitHub Release
-        if: steps.release.outputs.state == 'draft'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PACKAGE_VERSION: ${{ needs.validate.outputs.version }}
-          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
-        run: |
-          make_latest=true
-          if [[ "$PRERELEASE" == true ]]; then
-            make_latest=false
-          fi
-
-          jq -n \
-            --arg name "Docker Registry Client ${PACKAGE_VERSION}" \
-            --arg tag "$GITHUB_REF_NAME" \
-            --arg make_latest "$make_latest" \
-            --argjson prerelease "$PRERELEASE" \
-            '{
-              name: $name,
-              tag_name: $tag,
-              draft: false,
-              prerelease: $prerelease,
-              make_latest: $make_latest
-            }' |
-            gh api --method PATCH \
-              "repos/${GITHUB_REPOSITORY}/releases/${{ steps.release.outputs.id }}" \
-              --input -
-
       - name: Attach packages to GitHub Release
         shell: bash
+        working-directory: src
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           shopt -s nullglob
           packages=(artifacts/*.nupkg artifacts/*.snupkg)
-          gh release upload "$GITHUB_REF_NAME" "${packages[@]}" --clobber
+          gh release upload "$RELEASE_TAG" "${packages[@]}" --clobber
+
+      - name: Finalize GitHub Release
+        uses: mthalman/release-automation/actions/finalize-release@90551757fe8b061d4dff1a4cab12f10e58f07201 # v1.0.1
+        with:
+          context: ${{ needs.prepare.outputs.context }}

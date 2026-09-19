@@ -45,5 +45,28 @@ dotnet test
 4. Run the build and tests.
 5. Open a pull request that explains the problem and the solution.
 
+## Document breaking changes
+
+Follow the pinned [release-automation author guide](https://github.com/mthalman/release-automation/blob/90551757fe8b061d4dff1a4cab12f10e58f07201/docs/author-guide.md)
+and the [labeling rules](MAINTAINERS.md#label-pull-requests). The workflows use
+the toolkit's default labels and paths.
+
+For each breaking change, add a new file named
+`.changes/+short-kebab-slug.breaking.md` and apply `semver:major`.
+Use the [fragment template](https://github.com/mthalman/release-automation/blob/90551757fe8b061d4dff1a4cab12f10e58f07201/docs/fragment-template.md):
+one H3 title followed by these H4 sections, in order:
+
+- Previous behavior
+- New behavior
+- Type of breaking change
+- Reason for change
+- Recommended action
+- Affected APIs
+
+Each section needs concrete guidance, not placeholders. Never combine
+`semver:major` with `skip-changelog`. Retain fragments after publication; a new
+breaking change requires a new fragment, not an edit to an existing one.
+Non-breaking changes do not need fragments.
+
 Repository maintainers should follow the [maintainer guide](MAINTAINERS.md) for
 pull-request labeling and releases.
