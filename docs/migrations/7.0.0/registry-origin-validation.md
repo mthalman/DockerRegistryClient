@@ -99,48 +99,6 @@ and configuration inputs rather than catching argument errors and continuing.
 Keep server-issued pagination and upload links intact; they are URI references,
 not constructor origins or repository-name arguments.
 
-### Server-issued links
-
-Pass a returned `Location` or `NextPageLink` back unchanged. These links can
-contain percent-encoded information that the server needs for subsequent
-requests. Absolute URLs, scheme-relative links (starting with `//`), and
-relative links remain supported.
-
-Upload results return `Location` as an absolute URL. Relative locations from
-the server are resolved against the request that produced the response,
-including after redirects, using standard .NET URI resolution.
-
-Server-issued links are resolved with `System.Uri`, rather than a custom
-parser or character policy. Dot segments and percent encodings receive
-normal .NET canonicalization; the library does not promise byte-for-byte
-preservation of the supplied URL. For example, `%41` can normalize to `A`.
-Links are not validated as repository names. Fragments (`#...`) may remain
-in URI metadata but are not sent in HTTP requests.
-
-Pagination and upload links can point to another origin. For these links,
-configured credentials are applied only to requests matching the registry's scheme,
-host, and port. The built-in OAuth handler does not process authentication
-challenges from a different origin, so those challenges cannot reuse
-credentials saved from the original registry request.
-
-`HttpClient.DefaultRequestHeaders` remains caller-controlled and applies to
-cross-origin pagination and upload requests as well as registry requests.
-The client does not reject or mutate these defaults. Configure registry
-authentication through `IRegistryClientCredentials` instead of shared default
-credential headers. Custom headers, including headers added by that callback,
-are not removed on redirects; only `Authorization` is cleared.
-
-Authentication policy is outside OCI's scope. The client retains its
-normal .NET transport behavior: the built-in HTTP handler supports HTTP(S),
-and HTTPS-to-HTTP redirects are not followed. URI parsing and normalization
-are delegated to .NET, without additional server-link restrictions.
-Upload-session locations may use HTTP or HTTPS, even when they differ from
-the registry's scheme. There is no destination-IP filtering. See
-[authentication](../../authentication.md) for the registry trust model and
-the distinction between automatic redirects and session locations.
-
-### Resource-reference formats
-
 The accepted resource-reference formats are:
 
 - Repository names are at most 255 characters and contain slash-separated
