@@ -8,3 +8,5 @@ Read each migration topic that applies to your application.
 - [Distinguish missing resources from failed existence checks](existence-check-errors.md)
 - [Read schema versions from typed manifests](manifest-schema-version.md)
 - [Supply registry origins and valid resource references](registry-origin-validation.md)
+- [Remove netstandard2.0 support](remove-netstandard-support.md)
+- [Scope cached upload authorization to its originating destination](upload-destination-credentials.md)
