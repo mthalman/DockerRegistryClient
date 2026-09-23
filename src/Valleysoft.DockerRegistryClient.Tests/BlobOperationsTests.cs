@@ -487,7 +487,7 @@ public class BlobOperationsTests
             {
                 byte[] content = request.Content!.ReadAsByteArrayAsync().GetAwaiter().GetResult();
                 return request.Method.Method == "PATCH" &&
-                    request.RequestUri == new Uri("https://registry.example/v2/repo/blobs/uploads/upload-id") &&
+                    request.RequestUri!.OriginalString == "https://registry.example/v2/repo/blobs/uploads/upload-id" &&
                     request.Headers.Authorization?.Parameter == "credential-token" &&
                     request.Content.Headers.ContentType?.MediaType == "application/octet-stream" &&
                     content.SequenceEqual(new byte[] { 1, 2, 3 });
@@ -502,8 +502,8 @@ public class BlobOperationsTests
             {
                 byte[] content = request.Content!.ReadAsByteArrayAsync().GetAwaiter().GetResult();
                 return request.Method == HttpMethod.Put &&
-                    request.RequestUri == new Uri(
-                        $"https://registry.example/v2/repo/blobs/uploads/upload-id?digest={Uri.EscapeDataString(Digest)}") &&
+                    request.RequestUri!.OriginalString ==
+                        $"https://registry.example/v2/repo/blobs/uploads/upload-id?digest={Uri.EscapeDataString(Digest)}" &&
                     request.Headers.Authorization?.Parameter == "credential-token" &&
                     request.Content.Headers.ContentType?.MediaType == "application/octet-stream" &&
                     content.SequenceEqual(new byte[] { 4 });
@@ -529,7 +529,7 @@ public class BlobOperationsTests
 
         Assert.Equal(uploadId, initialization.UploadId);
         Assert.Equal(2, streamResult.RangeOffset);
-        Assert.Equal($"/v2/repo/blobs/{Digest}", result.Location);
+        Assert.Equal($"https://registry.example/v2/repo/blobs/{Digest}", result.Location);
         Assert.Equal(Digest, result.Digest);
         Assert.Equal(0, handler.RemainingRequestCount);
     }
@@ -551,6 +551,236 @@ public class BlobOperationsTests
             () => client.Blobs.GetUploadAsync("/v2/repo/blobs/uploads/upload-id"));
 
         Assert.Contains("Expected '0-<offset>'", exception.Message);
+    }
+
+    [Fact]
+    public async Task SendUploadStreamAsync_CrossOriginLocationDoesNotForwardCredentials()
+    {
+        var uploadId = Guid.NewGuid();
+        var response = new HttpResponseMessage(HttpStatusCode.Accepted);
+        response.Headers.Location = new Uri("https://uploads.example/opaque/%41%7E%2F", UriKind.Absolute);
+        response.Headers.Add("Docker-Upload-UUID", uploadId.ToString());
+        response.Headers.Add("Range", "0-0");
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            request =>
+                request.RequestUri!.OriginalString == "https://uploads.example/opaque/%41%7E%2F" &&
+                request.Headers.Authorization is null,
+            response);
+        using var client = new RegistryClient(
+            "registry.example",
+            new TokenCredentials("configured-token"),
+            new HttpClient(handler),
+            disposeHttpClient: true);
+        var uploadContext = new BlobUploadContext(
+            new AuthenticationHeaderValue("Bearer", "upload-token"), client.BaseUri);
+
+        await client.Blobs.SendUploadStreamAsync(
+            "https://uploads.example/opaque/%41%7E%2F",
+            new MemoryStream([1]),
+            uploadContext);
+
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task UploadPrimitives_UseNormalizedResponseLocationThroughCompletion()
+    {
+        const string Location = "/upload/%41%7E?state=hello%20world";
+        const string AbsoluteLocation = "https://registry.example/upload/A~?state=hello%20world";
+        var handler = new MockHttpMessageHandler();
+        var beginResponse = new HttpResponseMessage(HttpStatusCode.Accepted);
+        beginResponse.Headers.TryAddWithoutValidation("Location", Location);
+        beginResponse.Headers.Add("Docker-Upload-UUID", Guid.Empty.ToString());
+        handler.AddExpectedRequest(HttpMethod.Post, "https://registry.example/v2/repo/blobs/uploads/", beginResponse);
+        var patchResponse = new HttpResponseMessage(HttpStatusCode.Accepted);
+        patchResponse.Headers.TryAddWithoutValidation("Location", Location);
+        patchResponse.Headers.Add("Docker-Upload-UUID", Guid.Empty.ToString());
+        patchResponse.Headers.Add("Range", "0-0");
+        handler.AddExpectedRequest(request =>
+        {
+            Assert.Equal("PATCH", request.Method.Method);
+            Assert.Equal(AbsoluteLocation, request.RequestUri!.AbsoluteUri);
+            return true;
+        }, patchResponse);
+        var endResponse = new HttpResponseMessage(HttpStatusCode.Created);
+        endResponse.Headers.Location = new Uri($"/v2/repo/blobs/{Digest}", UriKind.Relative);
+        endResponse.Headers.Add("Docker-Content-Digest", Digest);
+        handler.AddExpectedRequest(request =>
+        {
+            Assert.Equal(HttpMethod.Put, request.Method);
+            Assert.Equal($"{AbsoluteLocation}&digest={Uri.EscapeDataString(Digest)}", request.RequestUri!.AbsoluteUri);
+            return true;
+        }, endResponse);
+        using var client = new RegistryClient("registry.example", null, handler);
+        using var stream = new MemoryStream([1]);
+
+        BlobUploadInitializationResult initialization = await client.Blobs.BeginUploadAsync("repo");
+        Assert.Equal(AbsoluteLocation, initialization.Location);
+        BlobUploadStreamResult chunk = await client.Blobs.SendUploadStreamAsync(
+            initialization.Location, stream, initialization.UploadContext);
+        Assert.Equal(AbsoluteLocation, chunk.Location);
+        await client.Blobs.EndUploadAsync(chunk.Location, Digest, initialization.UploadContext);
+
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    [Theory]
+    [InlineData("session/%41?state=%2541", "https://registry.example/v2/team/repo/blobs/uploads/session/A?state=%2541")]
+    [InlineData("?session=%41", "https://registry.example/v2/team/repo/blobs/uploads/?session=A")]
+    public async Task UploadPrimitives_ResolveRelativeLocationsAgainstEachRequest(
+        string location, string expectedUploadUri)
+    {
+        var handler = new MockHttpMessageHandler();
+        var beginResponse = new HttpResponseMessage(HttpStatusCode.Accepted);
+        beginResponse.Headers.TryAddWithoutValidation("Location", location);
+        beginResponse.Headers.Add("Docker-Upload-UUID", Guid.Empty.ToString());
+        handler.AddExpectedRequest(HttpMethod.Post, "https://registry.example/v2/team/repo/blobs/uploads/", beginResponse);
+
+        string expectedChunkUri = expectedUploadUri.Substring(0, expectedUploadUri.IndexOf('?')) + "?state=~%252F";
+        var chunkResponse = new HttpResponseMessage(HttpStatusCode.Accepted);
+        chunkResponse.Headers.TryAddWithoutValidation("Location", "?state=%7E%252F");
+        chunkResponse.Headers.Add("Docker-Upload-UUID", Guid.Empty.ToString());
+        chunkResponse.Headers.Add("Range", "0-0");
+        handler.AddExpectedRequest(request =>
+        {
+            Assert.Equal("PATCH", request.Method.Method);
+            Assert.Equal(expectedUploadUri, request.RequestUri!.AbsoluteUri);
+            return true;
+        }, chunkResponse);
+
+        var endResponse = new HttpResponseMessage(HttpStatusCode.Created);
+        endResponse.Headers.TryAddWithoutValidation("Location", "?download=%41");
+        endResponse.Headers.Add("Docker-Content-Digest", Digest);
+        handler.AddExpectedRequest(request =>
+        {
+            Assert.Equal(HttpMethod.Put, request.Method);
+            Assert.Equal($"{expectedChunkUri}&digest={Uri.EscapeDataString(Digest)}", request.RequestUri!.AbsoluteUri);
+            return true;
+        }, endResponse);
+        using var client = new RegistryClient("registry.example", null, handler);
+        using var stream = new MemoryStream([1]);
+
+        BlobUploadInitializationResult initialization = await client.Blobs.BeginUploadAsync("team/repo");
+        Assert.Equal(expectedUploadUri, initialization.Location);
+        BlobUploadStreamResult chunk = await client.Blobs.SendUploadStreamAsync(
+            initialization.Location, stream, initialization.UploadContext);
+        Assert.Equal(expectedChunkUri, chunk.Location);
+        BlobUploadResult result = await client.Blobs.EndUploadAsync(chunk.Location, Digest, initialization.UploadContext);
+
+        Assert.Equal(expectedUploadUri.Substring(0, expectedUploadUri.IndexOf('?')) + "?download=A", result.Location);
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UploadPrimitives_ResolveLocationsAgainstRedirectedRequest(bool customTransport)
+    {
+        const string RedirectUri = "https://uploads.example/sessions/start";
+        const string UploadUri = "https://uploads.example/session/A?state=~";
+        var handler = new MockHttpMessageHandler();
+        var beginResponse = new HttpResponseMessage(HttpStatusCode.Accepted);
+        beginResponse.Headers.TryAddWithoutValidation("Location", "/session/%41?state=%7E");
+        beginResponse.Headers.Add("Docker-Upload-UUID", Guid.Empty.ToString());
+        using var effectiveRequest = new HttpRequestMessage(HttpMethod.Post, RedirectUri);
+        if (customTransport)
+        {
+            beginResponse.RequestMessage = effectiveRequest;
+        }
+        else
+        {
+            var redirectResponse = new HttpResponseMessage(HttpStatusCode.TemporaryRedirect);
+            redirectResponse.Headers.Location = new Uri(RedirectUri);
+            handler.AddExpectedRequest(HttpMethod.Post, "https://registry.example/v2/repo/blobs/uploads/", redirectResponse);
+        }
+
+        handler.AddExpectedRequest(
+            HttpMethod.Post,
+            customTransport ? "https://registry.example/v2/repo/blobs/uploads/" : RedirectUri,
+            beginResponse);
+        var chunkResponse = new HttpResponseMessage(HttpStatusCode.Accepted);
+        chunkResponse.Headers.TryAddWithoutValidation("Location", "?state=%2541");
+        chunkResponse.Headers.Add("Docker-Upload-UUID", Guid.Empty.ToString());
+        chunkResponse.Headers.Add("Range", "0-0");
+        handler.AddExpectedRequest(request =>
+        {
+            Assert.Equal("PATCH", request.Method.Method);
+            Assert.Equal(UploadUri, request.RequestUri!.AbsoluteUri);
+            Assert.Null(request.Headers.Authorization);
+            return true;
+        }, chunkResponse);
+        using var client = customTransport
+            ? new RegistryClient("registry.example", new TokenCredentials("registry-token"), new HttpClient(handler), disposeHttpClient: true)
+            : new RegistryClient("registry.example", new TokenCredentials("registry-token"), handler);
+        using var stream = new MemoryStream([1]);
+
+        BlobUploadInitializationResult initialization = await client.Blobs.BeginUploadAsync("repo");
+        Assert.Equal(UploadUri, initialization.Location);
+        BlobUploadStreamResult chunk = await client.Blobs.SendUploadStreamAsync(
+            initialization.Location, stream, initialization.UploadContext);
+
+        Assert.Equal("https://uploads.example/session/A?state=%2541", chunk.Location);
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    [Theory]
+    [InlineData("copy", false)]
+    [InlineData("mount", false)]
+    [InlineData("convenience", false)]
+    [InlineData("copy", true)]
+    [InlineData("mount", true)]
+    [InlineData("convenience", true)]
+    public async Task UploadEntryPoints_UseResolvedResponseLocation(string entryPoint, bool externalUpload)
+    {
+        string uploadUri = externalUpload
+            ? "https://storage.example/upload/A?state=~"
+            : "https://registry.example/v2/repo/blobs/uploads/A?state=~";
+        var handler = new MockHttpMessageHandler();
+        var beginResponse = new HttpResponseMessage(HttpStatusCode.Accepted);
+        beginResponse.Headers.TryAddWithoutValidation("Location", externalUpload ? uploadUri : "%41?state=%7E");
+        beginResponse.Headers.Add("Docker-Upload-UUID", Guid.Empty.ToString());
+        string beginUri = "https://registry.example/v2/repo/blobs/uploads/";
+        if (entryPoint == "mount")
+        {
+            beginUri += $"?mount={Uri.EscapeDataString(Digest)}&from=source";
+        }
+
+        handler.AddExpectedRequest(HttpMethod.Post, beginUri, beginResponse);
+        var endResponse = new HttpResponseMessage(HttpStatusCode.Created);
+        endResponse.Headers.TryAddWithoutValidation("Location", "/blobs/%41");
+        endResponse.Headers.Add("Docker-Content-Digest", Digest);
+        handler.AddExpectedRequest(request =>
+        {
+            Assert.Equal(HttpMethod.Put, request.Method);
+            Assert.Equal($"{uploadUri}&digest={Uri.EscapeDataString(Digest)}", request.RequestUri!.AbsoluteUri);
+            Assert.Equal(externalUpload ? null : "registry-token", request.Headers.Authorization?.Parameter);
+            Assert.Equal(new byte[] { 1, 2, 3, 4 },
+                request.Content!.ReadAsByteArrayAsync().GetAwaiter().GetResult());
+            return true;
+        }, endResponse);
+        using var client = new RegistryClient("registry.example", new TokenCredentials("registry-token"), handler);
+        using var stream = new MemoryStream([1, 2, 3, 4]);
+
+        BlobUploadResult result;
+        if (entryPoint == "convenience")
+        {
+            result = await client.Blobs.UploadAsync("repo", stream, Digest);
+        }
+        else
+        {
+            var operations = Assert.IsType<BlobOperations>(client.Blobs);
+            BlobUploadSession upload = entryPoint == "copy"
+                ? await operations.BeginUploadForCopyAsync("repo")
+                : (await operations.MountAsync("repo", Digest, "source")).Upload!;
+            Assert.Equal(uploadUri, upload.Location);
+            result = await operations.EndUploadForCopyAsync(
+                upload.Location, Digest, upload.UploadContext, new StreamContent(stream));
+        }
+
+        Assert.Equal(externalUpload ? "https://storage.example/blobs/A" : "https://registry.example/blobs/A",
+            result.Location);
+        Assert.Equal(0, handler.RemainingRequestCount);
     }
 
     private static RegistryClient CreateClient(HttpMessageHandler handler) =>

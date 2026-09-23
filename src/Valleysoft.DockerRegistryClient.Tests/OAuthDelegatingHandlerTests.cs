@@ -9,6 +9,41 @@ namespace Valleysoft.DockerRegistryClient.Tests;
 
 public class OAuthDelegatingHandlerTests
 {
+    [Theory]
+    [InlineData("Basic")]
+    [InlineData("Bearer")]
+    public async Task SendAsync_CrossOriginRedirectChallenge_DoesNotReuseOriginalCredentials(string scheme)
+    {
+        // A redirect to a different origin (e.g. registry-selected HTTPS upload offloading) that itself
+        // challenges for bearer auth is not followed: the origin named by the challenge differs from the
+        // registry configured for this handler, so no credentials (original or newly obtained) are sent to
+        // it. Upload offloading to a different origin must use a presigned URL that does not require its
+        // own bearer challenge.
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            request => request.RequestUri!.Host == "registry.example" &&
+                request.Headers.Authorization?.Parameter == "registry-secret",
+            new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)
+            {
+                Headers = { Location = new Uri("https://storage.example/upload") }
+            });
+        var challenge = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        challenge.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer", "realm=\"https://storage.example/token\""));
+        handler.AddExpectedRequest(
+            request => request.RequestUri!.Host == "storage.example" &&
+                request.Headers.Authorization is null,
+            challenge);
+        using var client = new HttpClient(new OAuthDelegatingHandler(new RedirectDelegatingHandler(handler)));
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://registry.example/upload");
+        request.Headers.Authorization = new AuthenticationHeaderValue(scheme, "registry-secret");
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
     [Fact]
     public async Task SendAsync_AuthorizedForbidden_RetriesAnonymouslyAndCompletesBearerChallenge()
     {
@@ -619,6 +654,119 @@ public class OAuthDelegatingHandlerTests
         await Assert.ThrowsAsync<ObjectDisposedException>(
             () => tokenRequestContent!.ReadAsStringAsync());
         Assert.Same(tokenRequestContent, tokenRequest!.Content);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Theory]
+    [InlineData("Basic", "basic-credentials")]
+    [InlineData("Bearer", "refresh-token")]
+    public async Task SendAsync_CrossOriginRedirectChallenge_DoesNotForwardAuthorization(
+        string authorizationScheme,
+        string authorizationParameter)
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var redirectedUri = new Uri("https://attacker.example/redirected");
+        var redirectResponse = new HttpResponseMessage(HttpStatusCode.TemporaryRedirect);
+        redirectResponse.Headers.Location = redirectedUri;
+        innerHandler.AddExpectedRequest(
+            request => request.Method == HttpMethod.Get &&
+                request.RequestUri == new Uri("https://registry.example/v2/") &&
+                request.Headers.Authorization?.Scheme == authorizationScheme &&
+                request.Headers.Authorization?.Parameter == authorizationParameter,
+            redirectResponse);
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer",
+            "realm=\"https://auth.attacker.example/token\",service=\"registry.example\",scope=\"repository:repo:pull\""));
+        innerHandler.AddExpectedRequest(
+            request => request.Method == HttpMethod.Get &&
+                request.RequestUri == redirectedUri &&
+                request.Headers.Authorization is null,
+            unauthorizedResponse);
+
+        using var client = new RegistryClient("https://registry.example", null, innerHandler);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://registry.example/v2/");
+        request.Headers.Authorization = new AuthenticationHeaderValue(
+            authorizationScheme,
+            authorizationParameter);
+
+        using HttpResponseMessage response = await client.HttpClient.SendAsync(request);
+
+        Assert.Same(unauthorizedResponse, response);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(redirectedUri, request.RequestUri);
+        Assert.Equal(0, innerHandler.RemainingRequestCount);
+    }
+
+    [Theory]
+    [InlineData("Basic", "basic-credentials")]
+    [InlineData("Bearer", "refresh-token")]
+    public async Task SendAsync_SameOriginRedirectChallenge_AuthenticatesWithCrossHostRealm(
+        string authorizationScheme,
+        string authorizationParameter)
+    {
+        var innerHandler = new MockHttpMessageHandler();
+        var redirectedUri = new Uri("https://registry.example/v2/redirected");
+        var redirectResponse = new HttpResponseMessage(HttpStatusCode.TemporaryRedirect);
+        redirectResponse.Headers.Location = redirectedUri;
+        innerHandler.AddExpectedRequest(
+            request => request.Method == HttpMethod.Get &&
+                request.RequestUri == new Uri("https://registry.example/v2/") &&
+                request.Headers.Authorization?.Scheme == authorizationScheme &&
+                request.Headers.Authorization?.Parameter == authorizationParameter,
+            redirectResponse);
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        unauthorizedResponse.Headers.WwwAuthenticate.Add(new AuthenticationHeaderValue(
+            "Bearer",
+            "realm=\"https://auth.example/token\",service=\"registry.example\",scope=\"repository:repo:pull\""));
+        innerHandler.AddExpectedRequest(
+            request => request.Method == HttpMethod.Get &&
+                request.RequestUri == redirectedUri &&
+                request.Headers.Authorization is null,
+            unauthorizedResponse);
+        innerHandler.AddExpectedRequest(
+            request =>
+            {
+                if (authorizationScheme == "Bearer")
+                {
+                    Assert.Equal(HttpMethod.Post, request.Method);
+                    Assert.Null(request.Headers.Authorization);
+                    string body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                    var form = System.Web.HttpUtility.ParseQueryString(body);
+                    Assert.Equal("refresh_token", form["grant_type"]);
+                    Assert.Equal(authorizationParameter, form["refresh_token"]);
+                    Assert.Equal("registry.example", form["service"]);
+                    Assert.Equal("repository:repo:pull", form["scope"]);
+                    return request.RequestUri == new Uri("https://auth.example/token");
+                }
+
+                return request.Method == HttpMethod.Get &&
+                    request.RequestUri == new Uri(
+                        "https://auth.example/token?service=registry.example&scope=repository%3Arepo%3Apull") &&
+                    request.Headers.Authorization?.Scheme == authorizationScheme &&
+                    request.Headers.Authorization?.Parameter == authorizationParameter;
+            },
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"access_token":"access-token"}""")
+            });
+        innerHandler.AddExpectedRequest(
+            request => request.Method == HttpMethod.Get &&
+                request.RequestUri == redirectedUri &&
+                request.Headers.Authorization?.Scheme == "Bearer" &&
+                request.Headers.Authorization?.Parameter == "access-token",
+            new HttpResponseMessage(HttpStatusCode.OK));
+
+        using var client = new RegistryClient("https://registry.example", null, innerHandler);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://registry.example/v2/");
+        request.Headers.Authorization = new AuthenticationHeaderValue(
+            authorizationScheme,
+            authorizationParameter);
+
+        using HttpResponseMessage response = await client.HttpClient.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(redirectedUri, request.RequestUri);
         Assert.Equal(0, innerHandler.RemainingRequestCount);
     }
 

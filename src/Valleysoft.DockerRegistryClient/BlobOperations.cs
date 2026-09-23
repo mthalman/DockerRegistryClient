@@ -143,8 +143,12 @@ internal class BlobOperations : IBlobOperations
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
     public async Task<BlobUpload> GetUploadAsync(string uploadLocation, CancellationToken cancellationToken = default)
     {
-        using HttpRequestMessage request = new(HttpMethod.Get, new Uri(Client.BaseUri, uploadLocation));
-        using HttpResponseMessage response = await this.Client.SendRequestCoreAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
+        Uri uploadUri = new(Client.BaseUri, uploadLocation);
+        using HttpRequestMessage request = new(HttpMethod.Get, uploadUri);
+        using HttpResponseMessage response = await this.Client.SendRequestCoreAsync(
+            request,
+            cancellationToken: cancellationToken,
+            applyCredentials: RegistryUriBuilder.HasSameOrigin(Client.BaseUri, uploadUri)).ConfigureAwait(false);
 
         return new BlobUpload(GetUploadId(response), GetRangeOffset(response));
     }
@@ -156,8 +160,12 @@ internal class BlobOperations : IBlobOperations
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
     public async Task DeleteUploadAsync(string uploadLocation, CancellationToken cancellationToken = default)
     {
-        using HttpRequestMessage request = new(HttpMethod.Delete, new Uri(Client.BaseUri, uploadLocation));
-        await this.Client.SendRequestAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
+        Uri uploadUri = new(Client.BaseUri, uploadLocation);
+        using HttpRequestMessage request = new(HttpMethod.Delete, uploadUri);
+        using HttpResponseMessage response = await this.Client.SendRequestCoreAsync(
+            request,
+            cancellationToken: cancellationToken,
+            applyCredentials: RegistryUriBuilder.HasSameOrigin(Client.BaseUri, uploadUri)).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -176,13 +184,14 @@ internal class BlobOperations : IBlobOperations
         using HttpRequestMessage request = new(HttpMethod.Post,
             RegistryUriBuilder.Upload(Client.BaseUri, repositoryName));
 
-        HttpResponseMessage response = await this.Client.SendRequestCoreAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
+        using HttpResponseMessage response = await this.Client.SendRequestCoreAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         // Cache the authorization header for subsequent requests. This avoids re-requesting bearer tokens
         // for each request within a given client instance. This is particularly important for upload scenarios
         // where a bunch of data may be sent in the initial request only to be rejected for auth and forced to
         // upload again.
-        return new BlobUploadInitializationResult(GetLocation(response), GetUploadId(response), new BlobUploadContext(request.Headers.Authorization));
+        return new BlobUploadInitializationResult(
+            GetLocation(response, request), GetUploadId(response), GetUploadContext(response, request));
     }
 
     internal async Task<BlobUploadSession> BeginUploadForCopyAsync(
@@ -197,8 +206,8 @@ internal class BlobOperations : IBlobOperations
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         return new BlobUploadSession(
-            GetLocation(response),
-            new BlobUploadContext(request.Headers.Authorization));
+            GetLocation(response, request),
+            GetUploadContext(response, request));
     }
 
     internal async Task<BlobMountResult> MountAsync(
@@ -225,8 +234,8 @@ internal class BlobOperations : IBlobOperations
             {
                 return new BlobMountResult(
                     new BlobUploadSession(
-                        GetLocation(response),
-                        new BlobUploadContext(request.Headers.Authorization)));
+                        GetLocation(response, request),
+                        GetUploadContext(response, request)));
             }
 
             throw new InvalidOperationException(
@@ -259,15 +268,17 @@ internal class BlobOperations : IBlobOperations
     /// </remarks>
     public async Task<BlobUploadStreamResult> SendUploadStreamAsync(string uploadLocation, Stream stream, BlobUploadContext uploadContext, CancellationToken cancellationToken = default)
     {
-        using HttpRequestMessage request = new(HttpMethod.Patch, new Uri(Client.BaseUri, uploadLocation))
-        {
-            Content = CreateStreamContent(stream)
-        };
-        // Reuse the Auth header from the initial upload to avoid re-authenticating and wasting upload time in OAuth flow
-        request.Headers.Authorization = uploadContext.Authorization;
+        Uri uploadUri = new(Client.BaseUri, uploadLocation);
+        using HttpRequestMessage request = new(HttpMethod.Patch, uploadUri);
+        request.Content = CreateStreamContent(stream);
+        bool isSameOrigin = RegistryUriBuilder.HasSameOrigin(Client.BaseUri, uploadUri);
+        request.Headers.Authorization = GetUploadAuthorization(uploadContext, uploadUri);
 
-        using HttpResponseMessage response = await this.Client.SendRequestCoreAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return new BlobUploadStreamResult(GetLocation(response), GetUploadId(response), GetRangeOffset(response));
+        using HttpResponseMessage response = await this.Client.SendRequestCoreAsync(
+            request,
+            cancellationToken: cancellationToken,
+            applyCredentials: isSameOrigin).ConfigureAwait(false);
+        return new BlobUploadStreamResult(GetLocation(response, request), GetUploadId(response), GetRangeOffset(response));
     }
 
     /// <summary>
@@ -318,23 +329,38 @@ internal class BlobOperations : IBlobOperations
         CancellationToken cancellationToken)
     {
         RegistryReferenceValidator.ValidateDigest(digest, nameof(digest));
-        Uri uri = RegistryUriBuilder.AddQueryParameter(new Uri(Client.BaseUri, uploadLocation), "digest", digest);
+        Uri uri = RegistryUriBuilder.AddQueryParameter(
+            new Uri(Client.BaseUri, uploadLocation),
+            "digest",
+            digest);
 
-        using HttpRequestMessage request = new(HttpMethod.Put, uri)
-        {
-            Content = content
-        };
-        // Reuse the Auth header from the initial upload to avoid re-authenticating and wasting upload time in OAuth flow
-        request.Headers.Authorization = uploadContext.Authorization;
+        using HttpRequestMessage request = new(HttpMethod.Put, uri);
+        request.Content = content;
+        bool isSameOrigin = RegistryUriBuilder.HasSameOrigin(Client.BaseUri, uri);
+        request.Headers.Authorization = GetUploadAuthorization(uploadContext, uri);
 
-        using HttpResponseMessage response = await this.Client.SendRequestCoreAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return new BlobUploadResult(GetLocation(response), GetDigest(response));
+        using HttpResponseMessage response = await this.Client.SendRequestCoreAsync(
+            request,
+            cancellationToken: cancellationToken,
+            applyCredentials: isSameOrigin).ConfigureAwait(false);
+        return new BlobUploadResult(GetLocation(response, request), GetDigest(response));
     }
 
-    private static string GetLocation(HttpResponseMessage responseMsg)
+    private static AuthenticationHeaderValue? GetUploadAuthorization(BlobUploadContext context, Uri destination) =>
+        RegistryUriBuilder.HasSameOrigin(context.AuthorizationOrigin, destination) ? context.Authorization : null;
+
+    private static BlobUploadContext GetUploadContext(HttpResponseMessage response, HttpRequestMessage request)
     {
-        string? location = (responseMsg.Headers.Location?.ToString()) ?? throw new InvalidOperationException("Location header not set.");
-        return location;
+        HttpRequestMessage effectiveRequest = response.RequestMessage ?? request;
+        return new BlobUploadContext(
+            effectiveRequest.Headers.Authorization, effectiveRequest.RequestUri ?? request.RequestUri!);
+    }
+
+    private static string GetLocation(HttpResponseMessage responseMsg, HttpRequestMessage request)
+    {
+        string location = responseMsg.Headers.Location?.OriginalString ?? throw new InvalidOperationException("Location header not set.");
+        Uri requestUri = responseMsg.RequestMessage?.RequestUri ?? request.RequestUri!;
+        return new Uri(requestUri, location).AbsoluteUri;
     }
 
     private static Guid GetUploadId(HttpResponseMessage responseMsg)

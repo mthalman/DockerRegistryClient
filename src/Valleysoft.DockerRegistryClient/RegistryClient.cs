@@ -96,6 +96,7 @@ public class RegistryClient : IDisposable
         if (httpClient is null)
         {
             this.HttpClient = CreateHttpClient(
+                registryUri,
                 new HttpClientHandler
                 {
                     AllowAutoRedirect = false
@@ -126,22 +127,31 @@ public class RegistryClient : IDisposable
         string registry,
         IRegistryClientCredentials? serviceClientCredentials,
         HttpMessageHandler innerHandler)
-        : this(registry, serviceClientCredentials, CreateHttpClient(innerHandler), disposeHttpClient: true)
+        : this(
+            registry,
+            serviceClientCredentials,
+            CreateHttpClient(RegistryUriBuilder.CreateOrigin(registry), innerHandler),
+            disposeHttpClient: true)
     {
     }
 
-    private static HttpClient CreateHttpClient(HttpMessageHandler innerHandler) =>
+    private static HttpClient CreateHttpClient(
+        Uri registryUri,
+        HttpMessageHandler innerHandler) =>
         new(
             new OAuthDelegatingHandler(
+                registryUri,
                 new RedirectDelegatingHandler(innerHandler)));
 
     internal Task<T> SendRequestAsync<T>(HttpRequestMessage request, CancellationToken cancellationToken = default) =>
         SendRequestAsync(request, (Func<HttpResponseMessage, string, T>?)null, cancellationToken);
 
     internal async Task<T> SendRequestAsync<T>(HttpRequestMessage request,
-        Func<HttpResponseMessage, string, T>? getResult, CancellationToken cancellationToken = default)
+        Func<HttpResponseMessage, string, T>? getResult, CancellationToken cancellationToken = default,
+        bool applyCredentials = true)
     {
-        using HttpResponseMessage response = await SendRequestCoreAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
+        using HttpResponseMessage response = await SendRequestCoreAsync(
+            request, cancellationToken: cancellationToken, applyCredentials: applyCredentials).ConfigureAwait(false);
         return await GetStringContentAsync(response, getResult).ConfigureAwait(false);
     }
 
@@ -167,9 +177,10 @@ public class RegistryClient : IDisposable
         HttpRequestMessage request,
         bool ignoreUnsuccessfulResponse = false,
         CancellationToken cancellationToken = default,
-        HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead)
+        HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead,
+        bool applyCredentials = true)
     {
-        if (this.credentials is not null && request.Headers.Authorization is null)
+        if (applyCredentials && this.credentials is not null && request.Headers.Authorization is null)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await this.credentials.ProcessHttpRequestAsync(request, cancellationToken).ConfigureAwait(false);

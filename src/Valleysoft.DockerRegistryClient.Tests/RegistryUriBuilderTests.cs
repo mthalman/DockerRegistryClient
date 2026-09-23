@@ -121,30 +121,13 @@ public class RegistryUriBuilderTests
     }
 
     [Theory]
-    [InlineData("?last=repo%2Ftag", "https://registry.example/v2/repo/tags/list?last=repo%2Ftag")]
-    [InlineData("../next?state=abc#part", "https://registry.example/v2/repo/next?state=abc#part")]
-    [InlineData("/opaque/%2F?last=repo#part", "https://registry.example/opaque/%2F?last=repo#part")]
-    public void ServerReferences_ResolveAgainstEffectiveRequest(string location, string expected)
+    [InlineData("https://registry.example", "https://registry.example:443/next", true)]
+    [InlineData("https://registry.example", "https://other.example/next", false)]
+    [InlineData("https://registry.example", "https://registry.example:444/next", false)]
+    [InlineData("https://registry.example", "http://registry.example/next", false)]
+    [InlineData("https://bücher.example", "https://xn--bcher-kva.example:443/next", true)]
+    public void SameOrigin_ComparesSchemeCanonicalHostAndEffectivePort(string origin, string destination, bool expected)
     {
-        Uri origin = new("https://registry.example");
-        Uri request = new("https://registry.example/v2/repo/tags/list");
-        Assert.Equal(expected, UrlHelper.ResolveSameOrigin(origin, request, location).AbsoluteUri);
+        Assert.Equal(expected, RegistryUriBuilder.HasSameOrigin(new Uri(origin), new Uri(destination)));
     }
-
-    [Fact]
-    public void SameOrigin_RecognizesIdnAndDefaultPort()
-    {
-        Uri origin = new("https://bücher.example");
-        Uri result = UrlHelper.ResolveSameOrigin(origin, "https://xn--bcher-kva.example:443/next?state=a");
-        Assert.Equal(origin.IdnHost, result.IdnHost);
-    }
-
-    [Theory]
-    [InlineData("https://other.example/next")]
-    [InlineData("//other.example/next")]
-    [InlineData("http://registry.example/next")]
-    [InlineData("https://registry.example:444/next")]
-    public void SameOrigin_RejectsChangedOrigin(string location) =>
-        Assert.Throws<InvalidOperationException>(() =>
-            UrlHelper.ResolveSameOrigin(new Uri("https://registry.example"), location));
 }

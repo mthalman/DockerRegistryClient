@@ -60,6 +60,13 @@ length does not match. If an upload is redirected while preserving its request
 body, the source blob is downloaded again so the redirected request can be
 replayed safely.
 
+Destination uploads, including mount-fallback sessions, may use external HTTP
+or HTTPS storage. They follow the same
+[upload destination policy](blobs.md#upload-a-blob-in-chunks) as direct uploads.
+Cached upload authorization is reused only at its originating scheme, host,
+and effective port. Shared default headers remain caller-controlled and can
+be sent to external upload destinations.
+
 ## Recursive behavior
 
 The copy operation:

@@ -1,4 +1,6 @@
-﻿namespace Valleysoft.DockerRegistryClient;
+using System.Security.Authentication;
+
+namespace Valleysoft.DockerRegistryClient;
 
 internal class HttpBearerChallenge
 {
@@ -99,10 +101,28 @@ internal class HttpBearerChallenge
 
         if (!HttpHeaderValueParser.IsValidUri(realm, UriKind.Absolute))
         {
-            throw new ArgumentException($"Bearer realm is not a valid absolute URI: '{realm}'.", nameof(challenge));
+            throw new ArgumentException($"The challenge realm is not a valid absolute URI: '{realm}'.", nameof(challenge));
         }
 
         return new HttpBearerChallenge(realm, service, scope);
+    }
+
+    internal static Uri ValidateRealmUri(string realm)
+    {
+        if (!Uri.TryCreate(realm, UriKind.Absolute, out Uri? realmUri) ||
+            string.IsNullOrEmpty(realmUri.Host) ||
+            !string.IsNullOrEmpty(realmUri.UserInfo))
+        {
+            throw new AuthenticationException($"The bearer challenge realm '{realm}' is not a valid absolute URI.");
+        }
+
+        if (realmUri.Scheme != Uri.UriSchemeHttp && realmUri.Scheme != Uri.UriSchemeHttps)
+        {
+            throw new AuthenticationException(
+                $"The bearer challenge realm '{realm}' does not use an allowed scheme.");
+        }
+
+        return realmUri;
     }
 
     private static bool IsRecognizedParameter(string parameterName) =>

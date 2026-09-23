@@ -43,16 +43,16 @@ internal class ReferrerOperations : IReferrerOperations
         string? artifactType,
         CancellationToken cancellationToken)
     {
-        Uri requestUri = ResolveRegistryUri(Client.BaseUri, nextPageLink);
+        Uri requestUri = new(Client.BaseUri, nextPageLink);
         using HttpRequestMessage request = new(
             HttpMethod.Get,
             requestUri);
-        RedirectDelegatingHandler.RequireSameOrigin(request, Client.BaseUri);
 
         return await this.Client.SendRequestAsync(
             request,
-            (response, content) => GetPageResult(response, content, artifactType, requestUri),
-            cancellationToken).ConfigureAwait(false);
+            (response, content) => GetPageResult(response, content, artifactType, request.RequestUri!),
+            cancellationToken,
+            applyCredentials: RegistryUriBuilder.HasSameOrigin(Client.BaseUri, requestUri)).ConfigureAwait(false);
     }
 
     private Page<OciImageIndex> GetPageResult(
@@ -117,12 +117,7 @@ internal class ReferrerOperations : IReferrerOperations
             return null;
         }
 
-        return ResolveRegistryUri(requestUri, nextPageLink).AbsoluteUri;
-    }
-
-    private Uri ResolveRegistryUri(Uri baseUri, string uriReference)
-    {
-        return UrlHelper.ResolveSameOrigin(Client.BaseUri, baseUri, uriReference);
+        return new Uri(requestUri, nextPageLink).AbsoluteUri;
     }
 
     private async Task<Page<OciImageIndex>> GetFallbackAsync(

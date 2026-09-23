@@ -7,6 +7,31 @@ namespace Valleysoft.DockerRegistryClient.Tests;
 
 public class RegistryClientTests
 {
+    [Theory]
+    [InlineData("Bearer registry-secret")]
+    [InlineData("Basic cmVnaXN0cnktc2VjcmV0")]
+    [InlineData("not a valid authorization value")]
+    public async Task SendRequestCoreAsync_DisabledCredentials_DoesNotOverrideExplicitDefaults(
+        string authorization)
+    {
+        var handler = new MockHttpMessageHandler();
+        using var httpClient = new HttpClient(handler);
+        Assert.True(httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", authorization));
+        using var client = new RegistryClient("registry.example", null, httpClient);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://pages.example/next");
+        handler.AddExpectedRequest(request =>
+        {
+            Assert.Equal(authorization, Assert.Single(request.Headers.NonValidated["Authorization"]));
+            return true;
+        }, new HttpResponseMessage(HttpStatusCode.OK));
+
+        using HttpResponseMessage response = await client.SendRequestCoreAsync(request, applyCredentials: false);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, handler.RequestCount);
+        Assert.Equal(authorization, Assert.Single(httpClient.DefaultRequestHeaders.GetValues("Authorization")));
+    }
+
     [Fact]
     public void Constructor_NullRegistry_ThrowsArgumentNullException()
     {

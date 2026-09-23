@@ -188,7 +188,7 @@ public sealed class ReferrerOperationsTests
     [Theory]
     [InlineData("https://attacker.example/v2/repository/referrers/" + SubjectDigest + "?last=sha256:first")]
     [InlineData("http://registry.example/v2/repository/referrers/" + SubjectDigest + "?last=sha256:first")]
-    public async Task GetAsync_CrossOriginNextLink_Throws(string nextPageLink)
+    public async Task GetAsync_CrossOriginNextLink_DoesNotSendRegistryCredentials(string nextPageLink)
     {
         var handler = new MockHttpMessageHandler();
         HttpResponseMessage response = CreateJsonResponse(
@@ -198,17 +198,25 @@ public sealed class ReferrerOperationsTests
             HttpMethod.Get,
             ReferrersUri,
             response);
-        using var client = new RegistryClient("registry.example", null, new HttpClient(handler));
+        handler.AddExpectedRequest(request =>
+        {
+            Assert.Equal(nextPageLink, request.RequestUri!.AbsoluteUri);
+            Assert.Null(request.Headers.Authorization);
+            return true;
+        }, CreateJsonResponse(
+            """{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}"""));
+        using var client = new RegistryClient(
+            "registry.example", new Credentials.TokenCredentials("registry-secret"), handler);
 
-        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => client.Referrers.GetAsync("repository", SubjectDigest));
+        Page<OciImageIndex> page = await client.Referrers.GetAsync("repository", SubjectDigest);
+        Assert.Equal(nextPageLink, page.NextPageLink);
+        await client.Referrers.GetNextAsync(page.NextPageLink!);
 
-        Assert.Contains("registry origin", exception.Message);
         Assert.Equal(0, handler.RemainingRequestCount);
     }
 
     [Fact]
-    public async Task GetAsync_SameOriginRequestRedirectedCrossOrigin_Throws()
+    public async Task GetAsync_SameOriginRequestRedirectedCrossOrigin_DoesNotSendRegistryCredentials()
     {
         var innerHandler = new MockHttpMessageHandler();
         innerHandler.AddExpectedRequest(
@@ -221,12 +229,18 @@ public sealed class ReferrerOperationsTests
                     Location = new Uri("https://attacker.example/continuation")
                 }
             });
-        using var client = new RegistryClient("registry.example", null, innerHandler);
+        innerHandler.AddExpectedRequest(request =>
+        {
+            Assert.Equal("https://attacker.example/continuation", request.RequestUri!.AbsoluteUri);
+            Assert.Null(request.Headers.Authorization);
+            return true;
+        }, CreateJsonResponse(
+            """{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}"""));
+        using var client = new RegistryClient(
+            "registry.example", new Credentials.TokenCredentials("registry-secret"), innerHandler);
 
-        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => client.Referrers.GetAsync("repository", SubjectDigest));
+        await client.Referrers.GetAsync("repository", SubjectDigest);
 
-        Assert.Contains("outside the configured registry origin", exception.Message);
         Assert.Equal(0, innerHandler.RemainingRequestCount);
     }
 

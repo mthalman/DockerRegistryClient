@@ -70,7 +70,7 @@ public class RegistryOperationValidationTests
         using var httpClient = new HttpClient(handler);
         using var client = new RegistryClient("registry.example", credentials.Object, httpClient);
         using var stream = new UntouchedStream();
-        var context = new BlobUploadContext(null);
+        var context = new BlobUploadContext(null, client.BaseUri);
         (Func<Task> Operation, string Parameter)[] operations =
         [
             (() => client.Blobs.GetAsync(Repository, digest!), "digest"),
@@ -202,9 +202,9 @@ public class RegistryOperationValidationTests
     }
 
     [Theory]
-    [InlineData("/opaque/upload?state=a%2Fb%3D#fragment")]
-    [InlineData("https://registry.example/opaque/upload?state=a%2Fb%3D#fragment")]
-    public async Task UploadCompletion_AppendsDigestBeforeFragment(string location)
+    [InlineData("/opaque/upload?state=a%2Fb%3D")]
+    [InlineData("https://registry.example/opaque/upload?state=a%2Fb%3D")]
+    public async Task UploadCompletion_AppendsDigestWithoutChangingExistingQuery(string location)
     {
         using var handler = new MockHttpMessageHandler();
         using var httpClient = new HttpClient(handler);
@@ -214,10 +214,10 @@ public class RegistryOperationValidationTests
             Assert.Equal(HttpMethod.Put, request.Method);
             Assert.Equal("/opaque/upload", request.RequestUri!.AbsolutePath);
             Assert.Equal($"?state=a%2Fb%3D&digest=sha256%3A{new string('a', 64)}", request.RequestUri.Query);
-            Assert.Equal("#fragment", request.RequestUri.Fragment);
+            Assert.Equal("", request.RequestUri.Fragment);
             return true;
         }, CreateResponse());
-        await client.Blobs.EndUploadAsync(location, Digest, new BlobUploadContext(null));
+        await client.Blobs.EndUploadAsync(location, Digest, new BlobUploadContext(null, client.BaseUri));
         Assert.Equal(0, handler.RemainingRequestCount);
     }
 

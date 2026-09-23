@@ -68,3 +68,11 @@ while (true)
     page = await client.Catalog.GetNextAsync(page.NextPageLink);
 }
 ```
+
+Pass continuation links unchanged rather than decoding or rebuilding them.
+Continuation links and redirects can point to another server. The credential
+provider is not invoked for direct continuation requests to a different origin
+(scheme, host, or port). Redirects clear `Authorization`; shared default headers
+and custom headers remain caller-controlled. See
+[server-issued links](migrations/7.0.0/registry-origin-validation.md#server-issued-links)
+for URI resolution and credential-scoping behavior.

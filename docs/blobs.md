@@ -154,6 +154,25 @@ Chunked uploads use a multi-request workflow. The `BlobUploadContext` preserves
 the authorization header established by `BeginUploadAsync`; pass the same
 context to every subsequent request in that upload session.
 
+The registry may offload uploads to an external HTTP or HTTPS destination, including a
+different host or port. The client trusts that destination with blob contents,
+but reuses cached upload authorization only at its originating scheme, host, and
+effective port. The context records the authorization on the effective
+initialization request, including when a custom HTTP pipeline redirects it.
+
+Upload-session locations are accepted without a separate HTTPS or network-address
+policy. The normal redirect rules still apply: an HTTPS request does not follow
+an HTTP redirect. A session `Location` is not a redirect and can select an HTTP
+destination. Use a trusted registry and HTTPS locations to protect blob contents.
+Completed-blob locations are returned as metadata, not followed.
+
+Offloaded uploads should use presigned URLs: the built-in OAuth handler does
+not exchange tokens for challenges from external storage. See
+[custom credentials](authentication.md#provide-custom-credentials) for
+authorization scoping and caller-controlled headers, and
+[HTTP pipeline ownership](authentication.md#control-the-http-pipeline) for
+injected-client responsibilities.
+
 ### 1. Begin the upload
 
 ```csharp
@@ -161,6 +180,11 @@ BlobUploadInitializationResult init = await client.Blobs.BeginUploadAsync("myrep
 ```
 
 The result contains the upload `Location`, `UploadId`, and `UploadContext`.
+
+Pass `Location` back unchanged rather than decoding or rebuilding it. The
+server may include information in the link that it needs for the next request.
+See [server-issued links](migrations/7.0.0/registry-origin-validation.md#server-issued-links)
+for URI resolution and credential-scoping behavior.
 
 ### 2. Send chunks
 
