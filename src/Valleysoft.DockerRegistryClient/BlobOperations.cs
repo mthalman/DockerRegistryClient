@@ -259,12 +259,7 @@ internal class BlobOperations : IBlobOperations
     /// </remarks>
     public async Task<BlobUploadStreamResult> SendUploadStreamAsync(string uploadLocation, Stream stream, BlobUploadContext uploadContext, CancellationToken cancellationToken = default)
     {
-#if NETSTANDARD2_0
-        HttpMethod patchMethod = new("PATCH");
-#else
-        HttpMethod patchMethod = HttpMethod.Patch;
-#endif
-        using HttpRequestMessage request = new(patchMethod, new Uri(Client.BaseUri, uploadLocation))
+        using HttpRequestMessage request = new(HttpMethod.Patch, new Uri(Client.BaseUri, uploadLocation))
         {
             Content = CreateStreamContent(stream)
         };

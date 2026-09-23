@@ -88,7 +88,6 @@ jobs:
           | Branches | $branchesCovered | $branchesValid | $branchRate |
 
           No coverage threshold is enforced. Only successful runs establish a baseline.
-          netstandard2.0 is compilation-only; this is not .NET 8 runtime coverage.
           "@
           $summary | Set-Content TestResults/unit/coverage-summary.md
           $summary | Add-Content $env:GITHUB_STEP_SUMMARY
