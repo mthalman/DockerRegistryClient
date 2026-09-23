@@ -7,24 +7,39 @@ namespace Valleysoft.DockerRegistryClient;
 
 internal class OAuthDelegatingHandler : DelegatingHandler
 {
+    private readonly Uri? registryUri;
+
     public OAuthDelegatingHandler()
     {
     }
 
-    public OAuthDelegatingHandler(HttpMessageHandler innerHandler) : base(innerHandler)
+    public OAuthDelegatingHandler(HttpMessageHandler innerHandler)
+        : base(innerHandler)
     {
     }
 
-    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    public OAuthDelegatingHandler(Uri registryUri, HttpMessageHandler innerHandler)
+        : base(innerHandler)
+    {
+        this.registryUri = registryUri;
+    }
+
+    protected override HttpResponseMessage Send(HttpRequestMessage request, CancellationToken cancellationToken) =>
+        SendAsync(request, cancellationToken).GetAwaiter().GetResult();
+
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
     {
         AuthenticationHeaderValue? authorization = request.Headers.Authorization;
+        Uri requestRegistryUri = registryUri ?? request.RequestUri ??
+            throw new InvalidOperationException("The request URI must be set before authentication.");
 
         HttpResponseMessage response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (request.Headers.Authorization is not null &&
             response.StatusCode == HttpStatusCode.Forbidden)
         {
-            // Some registries only return a bearer challenge after an anonymous request.
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -41,6 +56,12 @@ internal class OAuthDelegatingHandler : DelegatingHandler
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
+            Uri? challengeUri = response.RequestMessage?.RequestUri ?? request.RequestUri;
+            if (!RegistryUriBuilder.HasSameOrigin(requestRegistryUri, challengeUri ?? requestRegistryUri))
+            {
+                return response;
+            }
+
             HttpBearerChallenge challenge;
             try
             {
@@ -74,7 +95,9 @@ internal class OAuthDelegatingHandler : DelegatingHandler
             challenge,
             authorization,
             cancellationToken).ConfigureAwait(false);
-        request.Headers.Authorization = new AuthenticationHeaderValue(HttpBearerChallenge.Bearer, authToken.AccessToken ?? authToken.Token);
+        request.Headers.Authorization = new AuthenticationHeaderValue(
+            HttpBearerChallenge.Bearer,
+            authToken.AccessToken ?? authToken.Token);
         return request;
     }
 
@@ -84,6 +107,7 @@ internal class OAuthDelegatingHandler : DelegatingHandler
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        Uri realmUri = HttpBearerChallenge.ValidateRealmUri(challenge.Realm);
 
         HttpRequestMessage authenticateRequest;
         if (authorization is not null &&
@@ -98,14 +122,14 @@ internal class OAuthDelegatingHandler : DelegatingHandler
             AddOptionalParameter(formValues, "scope", challenge.Scope);
             AddOptionalParameter(formValues, "service", challenge.Service);
 
-            authenticateRequest = new(HttpMethod.Post, challenge.Realm)
+            authenticateRequest = new(HttpMethod.Post, realmUri)
             {
                 Content = new FormUrlEncodedContent(formValues)
             };
         }
         else
         {
-            Uri authenticateUri = CreateAuthenticationUri(challenge);
+            Uri authenticateUri = CreateAuthenticationUri(realmUri, challenge);
             authenticateRequest = new(HttpMethod.Get, authenticateUri);
             authenticateRequest.Headers.Authorization = authorization;
         }
@@ -127,7 +151,8 @@ internal class OAuthDelegatingHandler : DelegatingHandler
 
             try
             {
-                return JsonSerializer.Deserialize<OAuthToken>(tokenContent) ?? throw new JsonException($"Unable to deserialize response:{Environment.NewLine}{tokenContent}");
+                return JsonSerializer.Deserialize<OAuthToken>(tokenContent) ??
+                    throw new JsonException($"Unable to deserialize response:{Environment.NewLine}{tokenContent}");
             }
             catch (JsonException e)
             {
@@ -147,9 +172,11 @@ internal class OAuthDelegatingHandler : DelegatingHandler
         }
     }
 
-    private static Uri CreateAuthenticationUri(HttpBearerChallenge challenge)
+    private static Uri CreateAuthenticationUri(
+        Uri realmUri,
+        HttpBearerChallenge challenge)
     {
-        var builder = new UriBuilder(challenge.Realm);
+        var builder = new UriBuilder(realmUri);
         var queryParts = new List<string>();
 
         if (builder.Query.Length > 1)
@@ -181,7 +208,7 @@ internal class OAuthDelegatingHandler : DelegatingHandler
             .FirstOrDefault(header =>
                 header.Scheme.Equals(HttpBearerChallenge.Bearer, StringComparison.OrdinalIgnoreCase)) ??
                 throw new AuthenticationException(
-                    $"****** not contained in unauthorized response from {response.RequestMessage?.RequestUri}");
+                    $"The unauthorized response from {response.RequestMessage?.RequestUri} does not contain an OAuth authentication challenge.");
         return HttpBearerChallenge.Parse(bearerHeader.Parameter);
     }
 }

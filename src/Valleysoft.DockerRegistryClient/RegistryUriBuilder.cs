@@ -4,6 +4,11 @@ namespace Valleysoft.DockerRegistryClient;
 
 internal static class RegistryUriBuilder
 {
+    public static bool HasSameOrigin(Uri left, Uri right) =>
+        string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(left.IdnHost, right.IdnHost, StringComparison.OrdinalIgnoreCase) &&
+        left.Port == right.Port;
+
     public static Uri CreateOrigin(string registry)
     {
         if (registry is null)

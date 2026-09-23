@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Valleysoft.DockerRegistryClient.Credentials;
 using Valleysoft.DockerRegistryClient.Models;
@@ -131,7 +133,31 @@ public sealed class OAuthIntegrationTests
             {
                 MaxConnectionsPerServer = 1,
                 MaxResponseDrainSize = 0,
-                UseProxy = false
+                UseProxy = false,
+                ConnectCallback = async (_, cancellationToken) =>
+                {
+                    var socket = new Socket(
+                        AddressFamily.InterNetwork,
+                        SocketType.Stream,
+                        ProtocolType.Tcp);
+                    try
+                    {
+                        await socket.ConnectAsync(
+                            new IPEndPoint(IPAddress.Loopback, server.Port),
+                            cancellationToken);
+                        return new NetworkStream(socket, ownsSocket: true);
+                    }
+                    catch
+                    {
+                        socket.Dispose();
+                        throw;
+                    }
+                },
+                SslOptions =
+                {
+                    RemoteCertificateValidationCallback =
+                        static (_, _, _, _) => true
+                }
             });
 
     private static async Task<Page<Catalog>> GetCatalogAsync(
@@ -155,6 +181,8 @@ public sealed class OAuthIntegrationTests
         private readonly TcpListener _listener;
         private readonly CancellationTokenSource _cancellationSource = new();
         private readonly string _tokenResponse;
+        private readonly X509Certificate2 _certificate =
+            LoopbackTls.CreateCertificate();
 
         public OAuthLoopbackServer(
             string tokenResponse = """{"access_token":"access-token"}""")
@@ -162,12 +190,14 @@ public sealed class OAuthIntegrationTests
             _tokenResponse = tokenResponse;
             _listener = new TcpListener(IPAddress.Loopback, 0);
             _listener.Start();
-            int port = ((IPEndPoint)_listener.LocalEndpoint).Port;
-            BaseUri = new Uri($"http://127.0.0.1:{port}/");
+            Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
+            BaseUri = new Uri($"https://registry.example:{Port}/");
             Completion = ServeAsync(_cancellationSource.Token);
         }
 
         public Uri BaseUri { get; }
+
+        public int Port { get; }
 
         public Task Completion { get; }
 
@@ -187,6 +217,7 @@ public sealed class OAuthIntegrationTests
             finally
             {
                 _listener.Stop();
+                _certificate.Dispose();
                 _cancellationSource.Dispose();
             }
         }
@@ -196,7 +227,11 @@ public sealed class OAuthIntegrationTests
             for (int requestIndex = 0; requestIndex < 3; requestIndex++)
             {
                 using TcpClient client = await _listener.AcceptTcpClientAsync(cancellationToken);
-                NetworkStream stream = client.GetStream();
+                await using SslStream stream =
+                    await LoopbackTls.AuthenticateServerAsync(
+                        client.GetStream(),
+                        _certificate,
+                        cancellationToken);
                 Requests.Add(await ReadRequestAsync(stream, cancellationToken));
 
                 if (requestIndex == 0)
@@ -226,7 +261,7 @@ public sealed class OAuthIntegrationTests
             };
 
         private async Task WriteChallengeAsync(
-            NetworkStream stream,
+            Stream stream,
             CancellationToken cancellationToken)
         {
             string response =
@@ -239,7 +274,7 @@ public sealed class OAuthIntegrationTests
         }
 
         private static async Task WaitForDisconnectAsync(
-            NetworkStream stream,
+            Stream stream,
             CancellationToken cancellationToken)
         {
             byte[] buffer = new byte[1];
@@ -251,7 +286,7 @@ public sealed class OAuthIntegrationTests
         }
 
         private static async Task<LoopbackRequest> ReadRequestAsync(
-            NetworkStream stream,
+            Stream stream,
             CancellationToken cancellationToken)
         {
             using var reader = new StreamReader(
@@ -304,7 +339,7 @@ public sealed class OAuthIntegrationTests
         }
 
         private static async Task WriteResponseAsync(
-            NetworkStream stream,
+            Stream stream,
             string response,
             CancellationToken cancellationToken)
         {

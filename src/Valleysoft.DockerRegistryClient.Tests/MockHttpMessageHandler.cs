@@ -9,6 +9,8 @@ public class MockHttpMessageHandler : HttpMessageHandler
 {
     private readonly Queue<(Func<HttpRequestMessage, bool> matcher, HttpResponseMessage response)> _expectedRequests = new();
 
+    public int RequestCount { get; private set; }
+
     public void AddExpectedRequest(Func<HttpRequestMessage, bool> matcher, HttpResponseMessage response)
     {
         _expectedRequests.Enqueue((matcher, response));
@@ -26,6 +28,7 @@ public class MockHttpMessageHandler : HttpMessageHandler
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        RequestCount++;
         if (!_expectedRequests.TryDequeue(out var expected))
         {
             throw new InvalidOperationException($"Unexpected request: {request.Method} {request.RequestUri}");

@@ -68,9 +68,15 @@ public sealed class RegistryFixture : IAsyncLifetime
     }
 
     public RegistryClient CreateClient(bool authenticated = true) =>
-        authenticated
-            ? new RegistryClient(BaseUri.AbsoluteUri, new BasicAuthenticationCredentials(UserName, Password))
-            : new RegistryClient(BaseUri.AbsoluteUri);
+        new(
+            BaseUri.AbsoluteUri,
+            authenticated
+                ? new BasicAuthenticationCredentials(UserName, Password)
+                : null,
+            new HttpClientHandler
+            {
+                AllowAutoRedirect = false
+            });
 
     public RegistryClient CreateClient(HttpMessageHandler innerHandler) =>
         new(

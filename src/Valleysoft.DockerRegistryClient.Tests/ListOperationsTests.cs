@@ -8,6 +8,98 @@ namespace Valleysoft.DockerRegistryClient.Tests;
 
 public class ListOperationsTests
 {
+    [Theory]
+    [InlineData("catalog")]
+    [InlineData("tags")]
+    [InlineData("referrers")]
+    public async Task Pagination_RelativeLinkAfterCrossOriginRedirect_UsesResponseOrigin(string operation)
+    {
+        string digest = RegistryFixture.GetDigest([1, 2, 3]);
+        string initialUri = "https://registry.example" + (operation switch
+        {
+            "catalog" => "/v2/_catalog",
+            "tags" => "/v2/repo/tags/list",
+            _ => $"/v2/repo/referrers/{digest}"
+        });
+        const string RedirectUri = "https://pages.example/pages/sub/A?state=~";
+        const string NextUri = "https://pages.example/pages/%252e%252e/final?state=~";
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            request => request.RequestUri!.AbsoluteUri == initialUri &&
+                request.Headers.Authorization?.Parameter == "registry-secret",
+            new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)
+            {
+                Headers = { Location = new Uri("https://pages.example/pages/sub/%41?state=%7E") }
+            });
+        var response = JsonResponse(new
+        {
+            repositories = Array.Empty<string>(),
+            name = "repo",
+            tags = Array.Empty<string>(),
+            schemaVersion = 2,
+            manifests = Array.Empty<object>()
+        });
+        response.Headers.Add("Link", "<../%252e%252e/final?state=%7E>; rel=\"next\"");
+        handler.AddExpectedRequest(request =>
+        {
+            Assert.Equal(RedirectUri, request.RequestUri!.AbsoluteUri);
+            Assert.Null(request.Headers.Authorization);
+            return true;
+        }, response);
+        handler.AddExpectedRequest(request =>
+        {
+            Assert.Equal(NextUri, request.RequestUri!.AbsoluteUri);
+            Assert.Null(request.Headers.Authorization);
+            return true;
+        }, JsonResponse(new { repositories = Array.Empty<string>(), tags = Array.Empty<string>(), manifests = Array.Empty<object>() }));
+        using var client = new RegistryClient(
+            "registry.example", new Credentials.TokenCredentials("registry-secret"), handler);
+
+        string? nextLink = operation switch
+        {
+            "catalog" => (await client.Catalog.GetAsync()).NextPageLink,
+            "tags" => (await client.Tags.GetAsync("repo")).NextPageLink,
+            _ => (await client.Referrers.GetAsync("repo", digest)).NextPageLink
+        };
+        Assert.Equal(NextUri, nextLink);
+        switch (operation)
+        {
+            case "catalog":
+                await client.Catalog.GetNextAsync(nextLink!);
+                break;
+            case "tags":
+                await client.Tags.GetNextAsync(nextLink!);
+                break;
+            default:
+                await client.Referrers.GetNextAsync(nextLink!);
+                break;
+        }
+
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task CatalogGetNextAsync_RelativeLinkKeepsCredentialsOnRegistryOrigin()
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            request =>
+            {
+                Assert.Equal("https://registry.example/attacker.example/next", request.RequestUri!.AbsoluteUri);
+                Assert.Equal("test-token", request.Headers.Authorization?.Parameter);
+                return true;
+            },
+            JsonResponse(new Catalog { RepositoryNames = ["repo"] }));
+        using var client = new RegistryClient(
+            "registry.example",
+            new Credentials.TokenCredentials("test-token"),
+            handler);
+
+        await client.Catalog.GetNextAsync("attacker.example/next");
+
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
     [Fact]
     public async Task CatalogGetAsync_AppliesCountAndReturnsNextPageLink()
     {
@@ -142,34 +234,37 @@ public class ListOperationsTests
     [InlineData(false, "https://attacker.example/v2/repo/tags/list")]
     [InlineData(false, "http://registry.example:443/v2/repo/tags/list")]
     [InlineData(false, "https://registry.example:444/v2/repo/tags/list")]
-    public async Task GetNextAsync_CrossOriginLink_ThrowsWithoutSendingRequest(
+    public async Task GetNextAsync_CrossOriginLink_DoesNotSendRegistryCredentials(
         bool useCatalog,
         string nextPageLink)
     {
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
-            HttpMethod.Get,
-            nextPageLink,
+            request =>
+            {
+                Assert.Equal(nextPageLink, request.RequestUri!.AbsoluteUri);
+                Assert.Null(request.Headers.Authorization);
+                return true;
+            },
             useCatalog
                 ? JsonResponse(new Catalog())
                 : JsonResponse(new RepositoryTags()));
-        using var client = CreateClient(handler);
+        using var client = new RegistryClient(
+            "registry.example", new Credentials.TokenCredentials("registry-secret"), handler);
 
         Task request = useCatalog
             ? client.Catalog.GetNextAsync(nextPageLink)
             : client.Tags.GetNextAsync(nextPageLink);
 
-        InvalidOperationException exception =
-            await Assert.ThrowsAsync<InvalidOperationException>(() => request);
+        await request;
 
-        Assert.StartsWith($"Location '{nextPageLink}' resolves outside", exception.Message);
-        Assert.Equal(1, handler.RemainingRequestCount);
+        Assert.Equal(0, handler.RemainingRequestCount);
     }
 
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task GetAsync_CrossOriginRedirect_Throws(bool useCatalog)
+    public async Task GetAsync_CrossOriginRedirect_DoesNotSendRegistryCredentials(bool useCatalog)
     {
         string initialRequestUri = useCatalog
             ? "https://registry.example/v2/_catalog"
@@ -185,16 +280,20 @@ public class ListOperationsTests
                     Location = new Uri("https://attacker.example/continuation")
                 }
             });
-        using var client = new RegistryClient("registry.example", null, handler);
+        handler.AddExpectedRequest(request =>
+        {
+            Assert.Equal("https://attacker.example/continuation", request.RequestUri!.AbsoluteUri);
+            Assert.Null(request.Headers.Authorization);
+            return true;
+        }, useCatalog ? JsonResponse(new Catalog()) : JsonResponse(new RepositoryTags()));
+        using var client = new RegistryClient(
+            "registry.example", new Credentials.TokenCredentials("registry-secret"), handler);
 
         Task request = useCatalog
             ? client.Catalog.GetAsync()
             : client.Tags.GetAsync("repo");
 
-        InvalidOperationException exception =
-            await Assert.ThrowsAsync<InvalidOperationException>(() => request);
-
-        Assert.Contains("outside the configured registry origin", exception.Message);
+        await request;
         Assert.Equal(0, handler.RemainingRequestCount);
     }
 

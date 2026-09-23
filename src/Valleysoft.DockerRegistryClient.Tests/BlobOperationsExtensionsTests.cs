@@ -46,7 +46,7 @@ public class BlobOperationsExtensionsTests
     [Fact]
     public async Task UploadAsync_ForwardsInitializationContextToEndUpload()
     {
-        var context = new BlobUploadContext(null);
+        var context = new BlobUploadContext(null, new Uri("https://registry.example"));
         var initialization = new BlobUploadInitializationResult(
             "/v2/repo/blobs/uploads/id",
             Guid.NewGuid(),

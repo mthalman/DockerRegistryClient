@@ -27,9 +27,9 @@ foreach (string tag in tagsPage.Value.Tags)
 }
 ```
 
-`RegistryClient` uses HTTPS when the registry name does not include a scheme. Pass
-a complete URI, such as `http://localhost:5000`, when the registry uses HTTP or
-a nondefault scheme.
+`RegistryClient` uses HTTPS when the registry name does not include a scheme.
+Pass an explicit HTTP origin, such as `http://localhost:5000`, when that is
+the intended transport.
 
 All operation methods accept an optional `CancellationToken`.
 

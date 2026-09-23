@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Xunit;
 
@@ -20,20 +22,19 @@ public sealed class OAuthDelegatingHandlerIntegrationTests
         try
         {
             int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            using X509Certificate2 certificate =
+                LoopbackTls.CreateCertificate();
             Task serverTask = RunForbiddenFallbackServerAsync(
                 listener,
                 port,
+                certificate,
                 cancellationSource.Token);
-            using var transport = new SocketsHttpHandler
-            {
-                AllowAutoRedirect = false,
-                UseProxy = false
-            };
+            using SocketsHttpHandler transport = CreateTransport(port);
             using var client = new HttpClient(
                 new OAuthDelegatingHandler(transport));
             using var request = new HttpRequestMessage(
                 HttpMethod.Get,
-                $"http://127.0.0.1:{port}/v2/repo/tags/list");
+                $"https://registry.example:{port}/v2/repo/tags/list");
             request.Headers.Authorization =
                 new AuthenticationHeaderValue("Basic", "credentials");
 
@@ -62,25 +63,25 @@ public sealed class OAuthDelegatingHandlerIntegrationTests
         try
         {
             int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            using X509Certificate2 certificate =
+                LoopbackTls.CreateCertificate();
             var contentBytes = new byte[] { 1, 2, 3, 4 };
             using var contentStream = new NonSeekableReadStream(contentBytes);
             Task serverTask = RunServerAsync(
                 listener,
                 port,
+                certificate,
                 contentStream,
                 contentBytes,
                 cancellationSource.Token);
-            using var transport = new SocketsHttpHandler
-            {
-                AllowAutoRedirect = false,
-                MaxConnectionsPerServer = 1,
-                UseProxy = false
-            };
+            using SocketsHttpHandler transport = CreateTransport(
+                port,
+                maxConnectionsPerServer: 1);
             using var client = new HttpClient(
                 new OAuthDelegatingHandler(transport));
             using var request = new HttpRequestMessage(
                 HttpMethod.Put,
-                $"http://127.0.0.1:{port}/upload")
+                $"https://registry.example:{port}/upload")
             {
                 Content = new ReplayableStreamContent(contentStream)
             };
@@ -102,9 +103,44 @@ public sealed class OAuthDelegatingHandlerIntegrationTests
         }
     }
 
+    private static SocketsHttpHandler CreateTransport(
+        int port,
+        int maxConnectionsPerServer = int.MaxValue) =>
+        new()
+        {
+            AllowAutoRedirect = false,
+            MaxConnectionsPerServer = maxConnectionsPerServer,
+            UseProxy = false,
+            ConnectCallback = async (_, cancellationToken) =>
+            {
+                var socket = new Socket(
+                    AddressFamily.InterNetwork,
+                    SocketType.Stream,
+                    ProtocolType.Tcp);
+                try
+                {
+                    await socket.ConnectAsync(
+                        new IPEndPoint(IPAddress.Loopback, port),
+                        cancellationToken);
+                    return new NetworkStream(socket, ownsSocket: true);
+                }
+                catch
+                {
+                    socket.Dispose();
+                    throw;
+                }
+            },
+            SslOptions =
+            {
+                RemoteCertificateValidationCallback =
+                    static (_, _, _, _) => true
+            }
+        };
+
     private static async Task RunForbiddenFallbackServerAsync(
         TcpListener listener,
         int port,
+        X509Certificate2 certificate,
         CancellationToken cancellationToken)
     {
         await ExchangeAsync(
@@ -118,6 +154,7 @@ public sealed class OAuthDelegatingHandlerIntegrationTests
                     StringComparison.OrdinalIgnoreCase);
             },
             "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            certificate,
             cancellationToken);
 
         await ExchangeAsync(
@@ -131,8 +168,9 @@ public sealed class OAuthDelegatingHandlerIntegrationTests
                     StringComparison.OrdinalIgnoreCase);
             },
             "HTTP/1.1 401 Unauthorized\r\n" +
-            $"WWW-Authenticate: {HttpBearerChallenge.Bearer} realm=\"http://127.0.0.1:{port}/token\",service=\"registry.example\",scope=\"repository:repo:pull\"\r\n" +
+            $"WWW-Authenticate: {HttpBearerChallenge.Bearer} realm=\"https://registry.example:{port}/token\",service=\"registry.example\",scope=\"repository:repo:pull\"\r\n" +
             "Content-Length: 0\r\nConnection: close\r\n\r\n",
+            certificate,
             cancellationToken);
 
         const string tokenResponse = """{"access_token":"access-token"}""";
@@ -150,6 +188,7 @@ public sealed class OAuthDelegatingHandlerIntegrationTests
             $"Content-Length: {Encoding.UTF8.GetByteCount(tokenResponse)}\r\n" +
             "Connection: close\r\n\r\n" +
             tokenResponse,
+            certificate,
             cancellationToken);
 
         await ExchangeAsync(
@@ -163,6 +202,7 @@ public sealed class OAuthDelegatingHandlerIntegrationTests
                     StringComparison.OrdinalIgnoreCase);
             },
             "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            certificate,
             cancellationToken);
     }
 
@@ -170,11 +210,15 @@ public sealed class OAuthDelegatingHandlerIntegrationTests
         TcpListener listener,
         Action<string> assertHeaders,
         string response,
+        X509Certificate2 certificate,
         CancellationToken cancellationToken)
     {
         using TcpClient connection =
             await listener.AcceptTcpClientAsync(cancellationToken);
-        await using NetworkStream stream = connection.GetStream();
+        await using SslStream stream = await LoopbackTls.AuthenticateServerAsync(
+            connection.GetStream(),
+            certificate,
+            cancellationToken);
         string headers = await ReadHeadersAsync(stream, cancellationToken);
         assertHeaders(headers);
         await WriteResponseAsync(stream, response, cancellationToken);
@@ -183,13 +227,18 @@ public sealed class OAuthDelegatingHandlerIntegrationTests
     private static async Task RunServerAsync(
         TcpListener listener,
         int port,
+        X509Certificate2 certificate,
         NonSeekableReadStream contentStream,
         byte[] expectedContent,
         CancellationToken cancellationToken)
     {
         using TcpClient firstConnection =
             await listener.AcceptTcpClientAsync(cancellationToken);
-        await using (NetworkStream firstStream = firstConnection.GetStream())
+        await using (SslStream firstStream =
+            await LoopbackTls.AuthenticateServerAsync(
+                firstConnection.GetStream(),
+                certificate,
+                cancellationToken))
         {
             string initialHeaders = await ReadHeadersAsync(
                 firstStream,
@@ -204,7 +253,7 @@ public sealed class OAuthDelegatingHandlerIntegrationTests
             await WriteResponseAsync(
                 firstStream,
                 "HTTP/1.1 401 Unauthorized\r\n" +
-                $"WWW-Authenticate: {HttpBearerChallenge.Bearer} realm=\"http://127.0.0.1:{port}/token\",service=\"registry.example\",scope=\"repository:repo:push\"\r\n" +
+                $"WWW-Authenticate: {HttpBearerChallenge.Bearer} realm=\"https://registry.example:{port}/token\",service=\"registry.example\",scope=\"repository:repo:push\"\r\n" +
                 "Content-Length: 1\r\n\r\n",
                 cancellationToken);
 
@@ -216,7 +265,11 @@ public sealed class OAuthDelegatingHandlerIntegrationTests
 
         using TcpClient secondConnection =
             await listener.AcceptTcpClientAsync(cancellationToken);
-        await using NetworkStream secondStream = secondConnection.GetStream();
+        await using SslStream secondStream =
+            await LoopbackTls.AuthenticateServerAsync(
+                secondConnection.GetStream(),
+                certificate,
+                cancellationToken);
 
         string tokenHeaders = await ReadHeadersAsync(
             secondStream,

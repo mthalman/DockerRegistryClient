@@ -19,18 +19,18 @@ internal class CatalogOperations : ICatalogOperations
 
     public async Task<Page<Catalog>> GetNextAsync(string nextPageLink, CancellationToken cancellationToken = default)
     {
-        Uri requestUri = UrlHelper.ResolveSameOrigin(this.Client.BaseUri, nextPageLink);
+        Uri requestUri = new(this.Client.BaseUri, nextPageLink);
         using HttpRequestMessage request = new(
             HttpMethod.Get,
             requestUri);
-        RedirectDelegatingHandler.RequireSameOrigin(request, this.Client.BaseUri);
 
         return await OperationsHelper.HandleNotFoundErrorAsync(
             "Catalog page not found.",
             () => this.Client.SendRequestAsync(
                 request,
-                (response, content) => GetPageResult(response, content, requestUri),
-                cancellationToken)).ConfigureAwait(false);
+                (response, content) => GetPageResult(response, content, request.RequestUri!),
+                cancellationToken,
+                applyCredentials: RegistryUriBuilder.HasSameOrigin(Client.BaseUri, requestUri))).ConfigureAwait(false);
     }
 
     private Page<Catalog> GetPageResult(
@@ -44,8 +44,7 @@ internal class CatalogOperations : ICatalogOperations
             return page;
         }
 
-        Uri nextPageUri = UrlHelper.ResolveSameOrigin(
-            this.Client.BaseUri,
+        Uri nextPageUri = new(
             response.RequestMessage?.RequestUri ?? requestUri,
             page.NextPageLink);
         return new Page<Catalog>(page.Value, nextPageUri.AbsoluteUri);

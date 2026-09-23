@@ -7,7 +7,7 @@ namespace Valleysoft.DockerRegistryClient.Tests;
 public class RedirectDelegatingHandlerTests
 {
     [Fact]
-    public async Task SendAsync_MarkedRequestFollowsSameOriginRedirect()
+    public async Task SendAsync_FollowsSameOriginRedirect()
     {
         var innerHandler = new MockHttpMessageHandler();
         innerHandler.AddExpectedRequest(
@@ -22,7 +22,6 @@ public class RedirectDelegatingHandlerTests
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             "https://registry.example/v2/repository/referrers/sha256:subject");
-        RedirectDelegatingHandler.RequireSameOrigin(request, new Uri("https://registry.example"));
 
         using HttpResponseMessage response = await client.SendAsync(request);
 
@@ -31,7 +30,7 @@ public class RedirectDelegatingHandlerTests
     }
 
     [Fact]
-    public async Task SendAsync_MarkedRequestRejectsCrossOriginRedirect()
+    public async Task SendAsync_CrossOriginRedirectDisposesPreviousResponse()
     {
         var innerHandler = new MockHttpMessageHandler();
         HttpResponseMessage redirectResponse = CreateRedirectResponse(
@@ -45,19 +44,21 @@ public class RedirectDelegatingHandlerTests
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             "https://registry.example/v2/repository/referrers/sha256:subject");
-        RedirectDelegatingHandler.RequireSameOrigin(request, new Uri("https://registry.example"));
+        innerHandler.AddExpectedRequest(
+            HttpMethod.Get,
+            "https://attacker.example/continuation",
+            new HttpResponseMessage(HttpStatusCode.OK));
 
-        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => client.SendAsync(request));
+        using HttpResponseMessage response = await client.SendAsync(request);
 
-        Assert.Contains("outside the configured registry origin", exception.Message);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         await Assert.ThrowsAsync<ObjectDisposedException>(
             () => redirectResponse.Content.ReadAsStringAsync());
         Assert.Equal(0, innerHandler.RemainingRequestCount);
     }
 
     [Fact]
-    public async Task SendAsync_UnmarkedRequestFollowsCrossOriginRedirect()
+    public async Task SendAsync_FollowsCrossOriginRedirect()
     {
         var innerHandler = new MockHttpMessageHandler();
         innerHandler.AddExpectedRequest(
@@ -77,22 +78,27 @@ public class RedirectDelegatingHandlerTests
         Assert.Equal(0, innerHandler.RemainingRequestCount);
     }
 
-    [Fact]
-    public async Task SendAsync_RedirectWithoutFragment_InheritsOriginalFragment()
+    [Theory]
+    [InlineData("#fragment", "/destination", "#fragment")]
+    [InlineData("#fragment", "/destination#", "#")]
+    [InlineData("##fragment", "/destination", "##fragment")]
+    [InlineData("#", "/destination", "#")]
+    public async Task SendAsync_RedirectFragmentInheritance(
+        string sourceFragment, string location, string expectedFragment)
     {
         var innerHandler = new MockHttpMessageHandler();
         innerHandler.AddExpectedRequest(
             HttpMethod.Get,
-            "https://registry.example/source#fragment",
-            CreateRedirectResponse("/destination"));
+            $"https://registry.example/source{sourceFragment}",
+            CreateRedirectResponse(location));
         innerHandler.AddExpectedRequest(
-            HttpMethod.Get,
-            "https://registry.example/destination#fragment",
+            request => request.Method == HttpMethod.Get &&
+                request.RequestUri?.AbsoluteUri == $"https://registry.example/destination{expectedFragment}",
             new HttpResponseMessage(HttpStatusCode.OK));
         using var client = new HttpClient(new RedirectDelegatingHandler(innerHandler));
 
         using HttpResponseMessage response = await client.GetAsync(
-            "https://registry.example/source#fragment");
+            $"https://registry.example/source{sourceFragment}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(0, innerHandler.RemainingRequestCount);
@@ -253,7 +259,7 @@ public class RedirectDelegatingHandlerTests
     }
 
     [Fact]
-    public async Task SendAsync_MarkedRequestRejectsCrossOriginOnLaterRedirect()
+    public async Task SendAsync_FollowsCrossOriginOnLaterRedirect()
     {
         var innerHandler = new MockHttpMessageHandler();
         innerHandler.AddExpectedRequest(
@@ -266,10 +272,14 @@ public class RedirectDelegatingHandlerTests
             CreateRedirectResponse("https://attacker.example/destination"));
         using var client = new HttpClient(new RedirectDelegatingHandler(innerHandler));
         using var request = new HttpRequestMessage(HttpMethod.Get, "https://registry.example/source");
-        RedirectDelegatingHandler.RequireSameOrigin(request, new Uri("https://registry.example"));
+        innerHandler.AddExpectedRequest(
+            HttpMethod.Get,
+            "https://attacker.example/destination",
+            new HttpResponseMessage(HttpStatusCode.OK));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendAsync(request));
+        using HttpResponseMessage response = await client.SendAsync(request);
 
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(0, innerHandler.RemainingRequestCount);
     }
 
