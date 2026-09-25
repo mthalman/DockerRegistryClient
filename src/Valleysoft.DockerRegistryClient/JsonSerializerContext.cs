@@ -13,8 +13,7 @@ namespace Valleysoft.DockerRegistryClient;
 
 [JsonSourceGenerationOptions(
     GenerationMode = JsonSourceGenerationMode.Metadata,
-    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(Catalog))]
 [JsonSerializable(typeof(RepositoryTags))]
 [JsonSerializable(typeof(ErrorResult))]
