@@ -7,4 +7,5 @@ may appear here before publication.
 
 ## Releases
 
+- [Upgrade to 8.0.0](8.0.0/README.md)
 - [Upgrade to 7.0.0](7.0.0/README.md)
