@@ -627,6 +627,26 @@ public class ManifestOperationsTests
     }
 
     [Fact]
+    public async Task PublishAsync_DerivedDockerManifest_SerializesRuntimeType()
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            request =>
+            {
+                using JsonDocument document = JsonDocument.Parse(
+                    request.Content!.ReadAsByteArrayAsync().GetAwaiter().GetResult());
+                return document.RootElement.GetProperty("customValue").GetString() == "preserved";
+            },
+            PublishResponse());
+        using var client = CreateClient(handler);
+        IManifest manifest = new CustomDockerManifest { CustomValue = "preserved" };
+
+        await client.Manifests.PublishAsync("repo", "typed", manifest);
+
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    [Fact]
     public async Task PublishAsync_KnownManifestModels_SendTheirMediaTypes()
     {
         (IManifest Manifest, string MediaType)[] cases =
@@ -1070,6 +1090,12 @@ public class ManifestOperationsTests
     }
 
     private sealed class CustomManifest : Manifest
+    {
+        [JsonPropertyName("customValue")]
+        public string? CustomValue { get; set; }
+    }
+
+    private sealed class CustomDockerManifest : DockerManifest
     {
         [JsonPropertyName("customValue")]
         public string? CustomValue { get; set; }

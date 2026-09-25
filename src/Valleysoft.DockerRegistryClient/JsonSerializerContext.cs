@@ -78,36 +78,37 @@ internal static class DockerRegistryClientJson
             return rawManifest.Content.ToArray();
         }
 
-        if (manifest is DockerManifest dockerManifest)
+        Type manifestType = manifest.GetType();
+        if (manifestType == typeof(DockerManifest))
         {
             return JsonSerializer.SerializeToUtf8Bytes(
-                dockerManifest,
+                (DockerManifest)manifest,
                 DockerRegistryClientJsonContext.Default.DockerManifest);
         }
 
-        if (manifest is ManifestList manifestList)
+        if (manifestType == typeof(ManifestList))
         {
             return JsonSerializer.SerializeToUtf8Bytes(
-                manifestList,
+                (ManifestList)manifest,
                 DockerRegistryClientJsonContext.Default.DockerManifestList);
         }
 
-        if (manifest is OciImageManifest ociImageManifest)
+        if (manifestType == typeof(OciImageManifest))
         {
             return JsonSerializer.SerializeToUtf8Bytes(
-                ociImageManifest,
+                (OciImageManifest)manifest,
                 DockerRegistryClientJsonContext.Default.OciImageManifest);
         }
 
-        if (manifest is OciImageIndex ociImageIndex)
+        if (manifestType == typeof(OciImageIndex))
         {
             return JsonSerializer.SerializeToUtf8Bytes(
-                ociImageIndex,
+                (OciImageIndex)manifest,
                 DockerRegistryClientJsonContext.Default.OciImageIndex);
         }
 
 #pragma warning disable IL2026, IL3050
-        return JsonSerializer.SerializeToUtf8Bytes(manifest, manifest.GetType());
+        return JsonSerializer.SerializeToUtf8Bytes(manifest, manifestType);
 #pragma warning restore IL2026, IL3050
     }
 
