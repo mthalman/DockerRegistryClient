@@ -261,7 +261,7 @@ internal class ManifestOperations : IManifestWriteOperations
                     return;
                 }
 
-                byte[] indexContent = JsonSerializer.SerializeToUtf8Bytes(index);
+                byte[] indexContent = DockerRegistryClientJson.SerializeManifest(index);
                 try
                 {
                     await PublishCoreAsync(
@@ -564,12 +564,11 @@ internal class ManifestOperations : IManifestWriteOperations
     }
 
     private static T Deserialize<T>(byte[] content)
-        where T : IManifest
+        where T : class, IManifest
     {
         try
         {
-            return JsonSerializer.Deserialize<T>(content) ??
-                throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{Encoding.UTF8.GetString(content)}");
+            return DockerRegistryClientJson.Deserialize<T>(Encoding.UTF8.GetString(content));
         }
         catch (JsonException exception)
         {

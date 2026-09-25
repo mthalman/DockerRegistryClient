@@ -70,7 +70,7 @@ public static class ManifestOperationsExtensions
 
         ReadOnlyMemory<byte> content = manifest is RawManifest rawManifest
             ? rawManifest.Content
-            : JsonSerializer.SerializeToUtf8Bytes(manifest, manifest.GetType());
+            : DockerRegistryClientJson.SerializeManifest(manifest);
 
         return operations.PublishAsync(
             repositoryName,

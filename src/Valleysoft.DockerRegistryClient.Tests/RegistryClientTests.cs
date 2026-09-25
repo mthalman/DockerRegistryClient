@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using Xunit;
 using Valleysoft.DockerRegistryClient.Models;
+using Valleysoft.DockerRegistryClient.Models.Images;
 
 namespace Valleysoft.DockerRegistryClient.Tests;
 
@@ -30,6 +31,24 @@ public class RegistryClientTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(1, handler.RequestCount);
         Assert.Equal(authorization, Assert.Single(httpClient.DefaultRequestHeaders.GetValues("Authorization")));
+    }
+
+    [Fact]
+    public void PublicJsonModels_DeserializeViaSourceGeneratedMetadata()
+    {
+        Catalog catalog = DockerRegistryClientJson.Deserialize<Catalog>("{\"repositories\":[\"repo\"]}");
+        RepositoryTags repositoryTags = DockerRegistryClientJson.Deserialize<RepositoryTags>("{\"name\":\"repo\",\"tags\":[\"latest\"]}");
+        Image image = DockerRegistryClientJson.Deserialize<Image>("{\"architecture\":\"amd64\",\"os\":\"linux\",\"rootfs\":{\"type\":\"layers\",\"diff_ids\":[]}}\n");
+        ErrorResult error = DockerRegistryClientJson.Deserialize<ErrorResult>("{\"errors\":[{\"code\":\"UNAUTHORIZED\",\"message\":\"bad\"}]}");
+        OAuthToken token = DockerRegistryClientJson.Deserialize<OAuthToken>("{\"access_token\":\"abc\"}");
+
+        Assert.Equal("repo", Assert.Single(catalog.RepositoryNames));
+        Assert.Equal("repo", repositoryTags.RepositoryName);
+        Assert.Equal("latest", Assert.Single(repositoryTags.Tags));
+        Assert.Equal("amd64", image.Architecture);
+        Assert.Equal("linux", image.Os);
+        Assert.Equal("UNAUTHORIZED", error.Errors[0].Code);
+        Assert.Equal("abc", token.AccessToken);
     }
 
     [Fact]
