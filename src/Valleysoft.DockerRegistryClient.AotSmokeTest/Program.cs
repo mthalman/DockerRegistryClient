@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json.Serialization;
 using Valleysoft.DockerRegistryClient;
+using Valleysoft.DockerRegistryClient.Credentials;
 using Valleysoft.DockerRegistryClient.Models.Manifests;
 using Valleysoft.DockerRegistryClient.Models.Manifests.Oci;
 
@@ -63,9 +65,26 @@ ManifestPublishResult customPublishResult = await client.Manifests.PublishAsync(
     SmokeJsonContext.Default.CustomManifest);
 AssertEqual($"https://{Constants.Registry}/v2/{Constants.Repository}/manifests/custom", customPublishResult.Location, "custom publish location");
 
+using var oauthServer = new CredentialedOAuthRegistryServer();
+using var oauthClient = new RegistryClient(
+    $"http://127.0.0.1:{oauthServer.Port}",
+    new BasicAuthenticationCredentials("aot-user", "aot-password"));
+Page<Valleysoft.DockerRegistryClient.Models.Catalog> authenticatedCatalog = await oauthClient.Catalog.GetAsync();
+AssertEqual(Constants.Repository, authenticatedCatalog.Value.RepositoryNames.Single(), "authenticated catalog repository");
+await oauthServer.Completion;
+AssertEqualCount(3, oauthServer.RequestCount, "OAuth challenge, token, and retry request count");
+
 static void AssertEqual(string expected, string? actual, string name)
 {
     if (!string.Equals(expected, actual, StringComparison.Ordinal))
+    {
+        throw new InvalidOperationException($"Expected {name} '{expected}', but got '{actual}'.");
+    }
+}
+
+static void AssertEqualCount(int expected, int actual, string name)
+{
+    if (expected != actual)
     {
         throw new InvalidOperationException($"Expected {name} '{expected}', but got '{actual}'.");
     }
@@ -185,6 +204,109 @@ sealed class SmokeRegistryHandler : HttpMessageHandler
           ]
         }
         """;
+}
+
+sealed class CredentialedOAuthRegistryServer : IDisposable
+{
+    private static readonly string BasicAuthorization =
+        "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("aot-user:aot-password"));
+    private const string BearerAuthorization = "Bearer aot-smoke-access-token";
+    private readonly TcpListener listener = new(IPAddress.Loopback, 0);
+    private int requestCount;
+
+    public CredentialedOAuthRegistryServer()
+    {
+        listener.Start();
+        Port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        Completion = ServeAsync();
+    }
+
+    public int Port { get; }
+
+    public int RequestCount => requestCount;
+
+    public Task Completion { get; }
+
+    private async Task ServeAsync()
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            using TcpClient connection = await listener.AcceptTcpClientAsync();
+            using NetworkStream stream = connection.GetStream();
+            using var reader = new StreamReader(stream, Encoding.ASCII, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+
+            string requestLine = await reader.ReadLineAsync() ??
+                throw new InvalidOperationException("The local OAuth smoke server received an empty request.");
+            string? authorization = null;
+            string? header;
+            while (!string.IsNullOrEmpty(header = await reader.ReadLineAsync()))
+            {
+                if (header.StartsWith("Authorization:", StringComparison.OrdinalIgnoreCase))
+                {
+                    authorization = header["Authorization:".Length..].Trim();
+                }
+            }
+
+            requestCount++;
+            string[] requestParts = requestLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (requestParts.Length != 3 || requestParts[0] != "GET")
+            {
+                throw new InvalidOperationException($"Unexpected local OAuth request: {requestLine}");
+            }
+
+            if (requestParts[1] == "/v2/_catalog" && authorization == BasicAuthorization)
+            {
+                await WriteResponseAsync(
+                    stream,
+                    HttpStatusCode.Unauthorized,
+                    string.Empty,
+                    $"WWW-Authenticate: Bearer realm=\"http://127.0.0.1:{Port}/token\",service=\"registry.example\",scope=\"registry:catalog:*\"\r\n");
+            }
+            else if (requestParts[1].StartsWith("/token?", StringComparison.Ordinal) &&
+                Uri.UnescapeDataString(requestParts[1]) == "/token?service=registry.example&scope=registry:catalog:*" &&
+                authorization == BasicAuthorization)
+            {
+                await WriteResponseAsync(
+                    stream,
+                    HttpStatusCode.OK,
+                    "{\"access_token\":\"aot-smoke-access-token\"}",
+                    "Content-Type: application/json\r\n");
+            }
+            else if (requestParts[1] == "/v2/_catalog" && authorization == BearerAuthorization)
+            {
+                await WriteResponseAsync(
+                    stream,
+                    HttpStatusCode.OK,
+                    "{\"repositories\":[\"library/alpine\"]}",
+                    "Content-Type: application/json\r\n");
+            }
+            else
+            {
+                throw new InvalidOperationException($"Unexpected local OAuth request or credentials: {requestLine}");
+            }
+        }
+    }
+
+    private static async Task WriteResponseAsync(
+        NetworkStream stream,
+        HttpStatusCode statusCode,
+        string body,
+        string additionalHeaders)
+    {
+        byte[] content = Encoding.UTF8.GetBytes(body);
+        string reason = statusCode == HttpStatusCode.Unauthorized ? "Unauthorized" : "OK";
+        byte[] headers = Encoding.ASCII.GetBytes(
+            $"HTTP/1.1 {(int)statusCode} {reason}\r\n" +
+            $"Content-Length: {content.Length}\r\n" +
+            "Connection: close\r\n" +
+            additionalHeaders +
+            "\r\n");
+        await stream.WriteAsync(headers);
+        await stream.WriteAsync(content);
+    }
+
+    public void Dispose() => listener.Stop();
+
 }
 
 static class Constants

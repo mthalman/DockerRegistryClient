@@ -41,11 +41,11 @@ public static class ManifestOperationsExtensions
     /// <param name="manifest">Manifest to publish.</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
     /// <remarks>
-    /// A <see cref="RawManifest"/> is published without changing its content. The library's built-in Docker and OCI
-    /// manifest models are serialized with source-generated JSON metadata. Other <see cref="IManifest"/>
-    /// implementations, including types derived from the built-in models, are not supported by this overload and
-    /// cause a <see cref="NotSupportedException"/>; publish them with the overload that accepts a
-    /// <see cref="JsonTypeInfo{T}"/>.
+    /// This overload is trim- and Native AOT-safe for <see cref="RawManifest"/> and the library's built-in Docker and
+    /// OCI manifest models, which use source-generated JSON metadata. Other <see cref="IManifest"/> implementations,
+    /// including types derived from the built-in models, are not supported by this overload and cause a
+    /// <see cref="NotSupportedException"/> rather than falling back to reflection. Publish custom manifests with the
+    /// overload that accepts a <see cref="JsonTypeInfo{T}"/>.
     /// </remarks>
     public static Task<ManifestPublishResult> PublishAsync(
         this IManifestOperations operations,

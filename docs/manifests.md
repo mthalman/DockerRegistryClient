@@ -65,10 +65,15 @@ This overload sends the provided bytes unchanged and supports vendor-specific
 manifest formats. Publishing a `RawManifest` through the model overload also
 preserves its original bytes.
 
-The model overload is trim- and Native AOT-safe: it serializes the built-in
-Docker and OCI manifest models with source-generated JSON metadata. To publish
+The model overload without `JsonTypeInfo` is trim- and Native AOT-safe for
+`RawManifest` and the built-in Docker and OCI manifest models, which use
+source-generated JSON metadata. It does not fall back to reflection: publishing
 a custom `IManifest` implementation, including a type derived from a built-in
-model, supply source-generated `JsonTypeInfo` for the concrete manifest type:
+model, throws `NotSupportedException`.
+
+To publish a custom manifest, including from a trimmed or Native AOT
+application, use the overload that accepts source-generated `JsonTypeInfo` for
+the concrete manifest type:
 
 ```csharp
 await client.Manifests.PublishAsync(
@@ -78,10 +83,8 @@ await client.Manifests.PublishAsync(
     AppJsonContext.Default.CustomManifest);
 ```
 
-The model overload that does not take `JsonTypeInfo` throws
-`NotSupportedException` for those manifest types. Publishing their serialized
-content as a `RawManifest` or through the byte-oriented overload is also
-supported.
+Publishing custom serialized content as a `RawManifest` or through the
+byte-oriented overload is also supported.
 
 When an OCI manifest or index includes a `subject`, publishing maintains the
 referrers tag-schema fallback if the registry does not acknowledge native
