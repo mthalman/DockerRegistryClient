@@ -143,12 +143,14 @@ public class RegistryClient : IDisposable
                 registryUri,
                 new RedirectDelegatingHandler(innerHandler)));
 
-    internal Task<T> SendRequestAsync<T>(HttpRequestMessage request, CancellationToken cancellationToken = default) =>
+    internal Task<T> SendRequestAsync<T>(HttpRequestMessage request, CancellationToken cancellationToken = default)
+        where T : class =>
         SendRequestAsync(request, (Func<HttpResponseMessage, string, T>?)null, cancellationToken);
 
     internal async Task<T> SendRequestAsync<T>(HttpRequestMessage request,
         Func<HttpResponseMessage, string, T>? getResult, CancellationToken cancellationToken = default,
         bool applyCredentials = true)
+        where T : class
     {
         using HttpResponseMessage response = await SendRequestCoreAsync(
             request, cancellationToken: cancellationToken, applyCredentials: applyCredentials).ConfigureAwait(false);
@@ -239,7 +241,7 @@ public class RegistryClient : IDisposable
 
         try
         {
-            return JsonSerializer.Deserialize<ErrorResult?>(errorContent);
+            return DockerRegistryClientJson.DeserializeNullable<ErrorResult>(errorContent);
         }
         catch (JsonException)
         {
@@ -298,6 +300,7 @@ public class RegistryClient : IDisposable
 
     internal static async Task<T> GetStringContentAsync<T>(
         HttpResponseMessage response, Func<HttpResponseMessage, string, T>? getResult)
+        where T : class
     {
         string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
@@ -321,13 +324,15 @@ public class RegistryClient : IDisposable
     }
 
     internal static Page<T> GetPageResult<T>(HttpResponseMessage response, string content)
+        where T : class
     {
         string? nextLink = GetNextLinkUrl(response);
         return new Page<T>(GetResult<T>(response, content), nextLink);
     }
 
-    internal static T GetResult<T>(HttpResponseMessage response, string content) =>
-        JsonSerializer.Deserialize<T>(content) ?? throw new JsonException($"Unable to deserialize the content:{Environment.NewLine}{content}");
+    internal static T GetResult<T>(HttpResponseMessage response, string content)
+        where T : class =>
+        DockerRegistryClientJson.Deserialize<T>(content);
 
     private static string? GetNextLinkUrl(HttpResponseMessage response)
     {

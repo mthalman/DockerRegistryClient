@@ -151,8 +151,7 @@ internal class OAuthDelegatingHandler : DelegatingHandler
 
             try
             {
-                return JsonSerializer.Deserialize<OAuthToken>(tokenContent) ??
-                    throw new JsonException($"Unable to deserialize response:{Environment.NewLine}{tokenContent}");
+                return DockerRegistryClientJson.Deserialize<OAuthToken>(tokenContent);
             }
             catch (JsonException e)
             {

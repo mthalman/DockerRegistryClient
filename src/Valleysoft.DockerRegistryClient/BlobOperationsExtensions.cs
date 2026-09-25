@@ -24,7 +24,7 @@ public static class BlobOperationsExtensions
         const string ErrorMessage = "The result could not be deserialized into an image model. Verify the digest represents an image config and not a layer.";
         try
         {
-            return JsonSerializer.Deserialize<Image>(content) ?? throw new JsonException(ErrorMessage);
+            return DockerRegistryClientJson.Deserialize<Image>(content);
         }
         catch (JsonException e)
         {

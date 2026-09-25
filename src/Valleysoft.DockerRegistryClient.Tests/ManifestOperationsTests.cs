@@ -11,7 +11,7 @@ using Xunit;
 
 namespace Valleysoft.DockerRegistryClient.Tests;
 
-public class ManifestOperationsTests
+public partial class ManifestOperationsTests
 {
     private static readonly string ManifestDigest = RegistryFixture.GetDigest(Encoding.UTF8.GetBytes("{}"));
     private const string SubjectDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -602,18 +602,9 @@ public class ManifestOperationsTests
     }
 
     [Fact]
-    public async Task PublishAsync_TypedManifest_SerializesRuntimeType()
+    public async Task PublishAsync_TypedManifest_WithoutJsonTypeInfo_IsNotSupported()
     {
         var handler = new MockHttpMessageHandler();
-        handler.AddExpectedRequest(
-            request =>
-            {
-                string requestContent = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
-                using JsonDocument document = JsonDocument.Parse(requestContent);
-                return request.Content.Headers.ContentType?.MediaType == "application/vnd.example.typed" &&
-                    document.RootElement.GetProperty("customValue").GetString() == "preserved";
-            },
-            PublishResponse());
         using var client = CreateClient(handler);
         IManifest manifest = new CustomManifest
         {
@@ -621,7 +612,50 @@ public class ManifestOperationsTests
             CustomValue = "preserved"
         };
 
-        await client.Manifests.PublishAsync("repo", "typed", manifest);
+        await Assert.ThrowsAsync<NotSupportedException>(
+            () => client.Manifests.PublishAsync("repo", "typed", manifest));
+
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task PublishAsync_CustomManifestWithJsonTypeInfo_SerializesCustomProperties()
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            request =>
+            {
+                using JsonDocument document = JsonDocument.Parse(
+                    request.Content!.ReadAsByteArrayAsync().GetAwaiter().GetResult());
+                return request.Content.Headers.ContentType?.MediaType == "application/vnd.example.typed" &&
+                    document.RootElement.GetProperty("customValue").GetString() == "preserved";
+            },
+            PublishResponse());
+        using var client = CreateClient(handler);
+        var manifest = new CustomManifest
+        {
+            MediaType = "application/vnd.example.typed",
+            CustomValue = "preserved"
+        };
+
+        await client.Manifests.PublishAsync(
+            "repo",
+            "typed",
+            manifest,
+            CustomManifestJsonContext.Default.CustomManifest);
+
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task PublishAsync_DerivedDockerManifest_WithoutJsonTypeInfo_IsNotSupported()
+    {
+        var handler = new MockHttpMessageHandler();
+        using var client = CreateClient(handler);
+        IManifest manifest = new CustomDockerManifest { CustomValue = "preserved" };
+
+        await Assert.ThrowsAsync<NotSupportedException>(
+            () => client.Manifests.PublishAsync("repo", "typed", manifest));
 
         Assert.Equal(0, handler.RemainingRequestCount);
     }
@@ -1075,6 +1109,12 @@ public class ManifestOperationsTests
         public string? CustomValue { get; set; }
     }
 
+    private sealed class CustomDockerManifest : DockerManifest
+    {
+        [JsonPropertyName("customValue")]
+        public string? CustomValue { get; set; }
+    }
+
     private sealed class ReadOnlyManifestOperations : IManifestOperations
     {
         public Task<ManifestInfo> GetAsync(
@@ -1094,5 +1134,10 @@ public class ManifestOperationsTests
             string tagOrDigest,
             CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
+    }
+
+    [JsonSerializable(typeof(CustomManifest))]
+    private partial class CustomManifestJsonContext : JsonSerializerContext
+    {
     }
 }
