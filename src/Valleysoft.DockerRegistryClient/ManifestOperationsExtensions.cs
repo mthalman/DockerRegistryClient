@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Valleysoft.DockerRegistryClient.Models.Manifests;
 
 namespace Valleysoft.DockerRegistryClient;
@@ -49,28 +50,53 @@ public static class ManifestOperationsExtensions
         IManifest manifest,
         CancellationToken cancellationToken = default)
     {
-        if (operations is null)
-        {
-            throw new ArgumentNullException(nameof(operations));
-        }
-
-        if (manifest is null)
-        {
-            throw new ArgumentNullException(nameof(manifest));
-        }
-
-        RegistryReferenceValidator.ValidateRepository(repositoryName, nameof(repositoryName));
-        RegistryReferenceValidator.ValidateReference(tagOrDigest, nameof(tagOrDigest));
-        string mediaType = manifest.MediaType ??
-            throw new ArgumentException("The manifest media type must be set.", nameof(manifest));
-        if (string.IsNullOrWhiteSpace(mediaType))
-        {
-            throw new ArgumentException("The manifest media type must be set.", nameof(manifest));
-        }
+        string mediaType = ValidateManifest(operations, repositoryName, tagOrDigest, manifest);
 
         ReadOnlyMemory<byte> content = manifest is RawManifest rawManifest
             ? rawManifest.Content
             : DockerRegistryClientJson.SerializeManifest(manifest);
+
+        return operations.PublishAsync(
+            repositoryName,
+            tagOrDigest,
+            content,
+            mediaType,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Serializes and publishes a manifest under a tag or digest reference using caller-supplied JSON metadata.
+    /// </summary>
+    /// <typeparam name="TManifest">The concrete manifest type.</typeparam>
+    /// <param name="operations">Provider of the manifest operations.</param>
+    /// <param name="repositoryName">Name of the target repository.</param>
+    /// <param name="tagOrDigest">Tag or digest reference for the manifest.</param>
+    /// <param name="manifest">Manifest to publish.</param>
+    /// <param name="jsonTypeInfo">JSON metadata for <typeparamref name="TManifest"/>.</param>
+    /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
+    /// <remarks>
+    /// Use this overload when publishing a custom manifest from a trimmed or Native AOT application. The overload
+    /// that does not accept <paramref name="jsonTypeInfo"/> supports the library's built-in manifest models without
+    /// reflection, but preserves runtime-type serialization for custom manifest types.
+    /// </remarks>
+    public static Task<ManifestPublishResult> PublishAsync<TManifest>(
+        this IManifestOperations operations,
+        string repositoryName,
+        string tagOrDigest,
+        TManifest manifest,
+        JsonTypeInfo<TManifest> jsonTypeInfo,
+        CancellationToken cancellationToken = default)
+        where TManifest : IManifest
+    {
+        if (jsonTypeInfo is null)
+        {
+            throw new ArgumentNullException(nameof(jsonTypeInfo));
+        }
+
+        string mediaType = ValidateManifest(operations, repositoryName, tagOrDigest, manifest);
+        ReadOnlyMemory<byte> content = manifest is RawManifest rawManifest
+            ? rawManifest.Content
+            : JsonSerializer.SerializeToUtf8Bytes(manifest, jsonTypeInfo);
 
         return operations.PublishAsync(
             repositoryName,
@@ -121,5 +147,33 @@ public static class ManifestOperationsExtensions
         return operations as IManifestWriteOperations ??
             throw new NotSupportedException(
                 $"The {operations.GetType().FullName} implementation does not support manifest write operations.");
+    }
+
+    private static string ValidateManifest(
+        IManifestOperations operations,
+        string repositoryName,
+        string tagOrDigest,
+        IManifest manifest)
+    {
+        if (operations is null)
+        {
+            throw new ArgumentNullException(nameof(operations));
+        }
+
+        if (manifest is null)
+        {
+            throw new ArgumentNullException(nameof(manifest));
+        }
+
+        RegistryReferenceValidator.ValidateRepository(repositoryName, nameof(repositoryName));
+        RegistryReferenceValidator.ValidateReference(tagOrDigest, nameof(tagOrDigest));
+        string mediaType = manifest.MediaType ??
+            throw new ArgumentException("The manifest media type must be set.", nameof(manifest));
+        if (string.IsNullOrWhiteSpace(mediaType))
+        {
+            throw new ArgumentException("The manifest media type must be set.", nameof(manifest));
+        }
+
+        return mediaType;
     }
 }

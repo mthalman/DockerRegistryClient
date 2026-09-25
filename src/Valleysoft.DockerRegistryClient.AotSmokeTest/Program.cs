@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json.Serialization;
 using Valleysoft.DockerRegistryClient;
 using Valleysoft.DockerRegistryClient.Models.Manifests;
 using Valleysoft.DockerRegistryClient.Models.Manifests.Oci;
@@ -50,6 +51,18 @@ var publishedManifest = new OciImageManifest
 ManifestPublishResult publishResult = await client.Manifests.PublishAsync(Constants.Repository, "artifact", publishedManifest);
 AssertEqual($"https://{Constants.Registry}/v2/{Constants.Repository}/manifests/artifact", publishResult.Location, "publish location");
 
+var customManifest = new CustomManifest
+{
+    MediaType = "application/vnd.example.custom",
+    CustomValue = "aot-safe"
+};
+ManifestPublishResult customPublishResult = await client.Manifests.PublishAsync(
+    Constants.Repository,
+    "custom",
+    customManifest,
+    SmokeJsonContext.Default.CustomManifest);
+AssertEqual($"https://{Constants.Registry}/v2/{Constants.Repository}/manifests/custom", customPublishResult.Location, "custom publish location");
+
 static void AssertEqual(string expected, string? actual, string name)
 {
     if (!string.Equals(expected, actual, StringComparison.Ordinal))
@@ -76,6 +89,7 @@ sealed class SmokeRegistryHandler : HttpMessageHandler
             ("PUT", "/v2/library/alpine/manifests/artifact") => CreatedManifest(request, verifyReferrersFallback: false),
             ("GET", "/v2/library/alpine/referrers/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") => Error(HttpStatusCode.NotFound),
             ("PUT", "/v2/library/alpine/manifests/sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") => CreatedManifest(request, verifyReferrersFallback: true),
+            ("PUT", "/v2/library/alpine/manifests/custom") => CreatedCustomManifest(request),
             _ => throw new InvalidOperationException($"Unexpected request: {request.Method} {pathAndQuery}")
         };
     }
@@ -94,6 +108,19 @@ sealed class SmokeRegistryHandler : HttpMessageHandler
 
         var response = new HttpResponseMessage(HttpStatusCode.Created);
         response.Headers.Location = new Uri($"https://{Constants.Registry}/v2/{Constants.Repository}/manifests/artifact");
+        return response;
+    }
+
+    private static HttpResponseMessage CreatedCustomManifest(HttpRequestMessage request)
+    {
+        string body = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+        if (!body.Contains("\"customValue\":\"aot-safe\"", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The custom manifest was not serialized with its supplied JSON metadata.");
+        }
+
+        var response = new HttpResponseMessage(HttpStatusCode.Created);
+        response.Headers.Location = new Uri($"https://{Constants.Registry}/v2/{Constants.Repository}/manifests/custom");
         return response;
     }
 
@@ -167,4 +194,15 @@ static class Constants
     public const string SubjectDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     public const string ManifestDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     public const string ArtifactType = "application/vnd.example.artifact";
+}
+
+sealed class CustomManifest : Manifest
+{
+    [JsonPropertyName("customValue")]
+    public string? CustomValue { get; set; }
+}
+
+[JsonSerializable(typeof(CustomManifest))]
+partial class SmokeJsonContext : JsonSerializerContext
+{
 }
