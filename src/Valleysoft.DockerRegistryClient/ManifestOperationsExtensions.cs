@@ -81,7 +81,8 @@ public static class ManifestOperationsExtensions
     /// <remarks>
     /// Use this overload when publishing a custom manifest, including from a trimmed or Native AOT application. The
     /// overload that does not accept <paramref name="jsonTypeInfo"/> supports the library's built-in manifest models
-    /// and <see cref="RawManifest"/> content only.
+    /// and <see cref="RawManifest"/> content only. A <see cref="RawManifest"/> is published without changing its
+    /// content, so <paramref name="jsonTypeInfo"/> is not used for it.
     /// </remarks>
     public static Task<ManifestPublishResult> PublishAsync<TManifest>(
         this IManifestOperations operations,
