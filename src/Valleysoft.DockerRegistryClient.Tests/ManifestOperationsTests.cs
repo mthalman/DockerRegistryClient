@@ -602,18 +602,9 @@ public partial class ManifestOperationsTests
     }
 
     [Fact]
-    public async Task PublishAsync_TypedManifest_SerializesRuntimeType()
+    public async Task PublishAsync_TypedManifest_WithoutJsonTypeInfo_IsNotSupported()
     {
         var handler = new MockHttpMessageHandler();
-        handler.AddExpectedRequest(
-            request =>
-            {
-                string requestContent = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
-                using JsonDocument document = JsonDocument.Parse(requestContent);
-                return request.Content.Headers.ContentType?.MediaType == "application/vnd.example.typed" &&
-                    document.RootElement.GetProperty("customValue").GetString() == "preserved";
-            },
-            PublishResponse());
         using var client = CreateClient(handler);
         IManifest manifest = new CustomManifest
         {
@@ -621,7 +612,8 @@ public partial class ManifestOperationsTests
             CustomValue = "preserved"
         };
 
-        await client.Manifests.PublishAsync("repo", "typed", manifest);
+        await Assert.ThrowsAsync<NotSupportedException>(
+            () => client.Manifests.PublishAsync("repo", "typed", manifest));
 
         Assert.Equal(0, handler.RemainingRequestCount);
     }
@@ -656,21 +648,14 @@ public partial class ManifestOperationsTests
     }
 
     [Fact]
-    public async Task PublishAsync_DerivedDockerManifest_SerializesRuntimeType()
+    public async Task PublishAsync_DerivedDockerManifest_WithoutJsonTypeInfo_IsNotSupported()
     {
         var handler = new MockHttpMessageHandler();
-        handler.AddExpectedRequest(
-            request =>
-            {
-                using JsonDocument document = JsonDocument.Parse(
-                    request.Content!.ReadAsByteArrayAsync().GetAwaiter().GetResult());
-                return document.RootElement.GetProperty("customValue").GetString() == "preserved";
-            },
-            PublishResponse());
         using var client = CreateClient(handler);
         IManifest manifest = new CustomDockerManifest { CustomValue = "preserved" };
 
-        await client.Manifests.PublishAsync("repo", "typed", manifest);
+        await Assert.ThrowsAsync<NotSupportedException>(
+            () => client.Manifests.PublishAsync("repo", "typed", manifest));
 
         Assert.Equal(0, handler.RemainingRequestCount);
     }

@@ -41,7 +41,11 @@ public static class ManifestOperationsExtensions
     /// <param name="manifest">Manifest to publish.</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
     /// <remarks>
-    /// A <see cref="RawManifest"/> is published without changing its content. Other manifests are serialized using their runtime type.
+    /// A <see cref="RawManifest"/> is published without changing its content. The library's built-in Docker and OCI
+    /// manifest models are serialized with source-generated JSON metadata. Other <see cref="IManifest"/>
+    /// implementations, including types derived from the built-in models, are not supported by this overload and
+    /// cause a <see cref="NotSupportedException"/>; publish them with the overload that accepts a
+    /// <see cref="JsonTypeInfo{T}"/>.
     /// </remarks>
     public static Task<ManifestPublishResult> PublishAsync(
         this IManifestOperations operations,
@@ -75,9 +79,9 @@ public static class ManifestOperationsExtensions
     /// <param name="jsonTypeInfo">JSON metadata for <typeparamref name="TManifest"/>.</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be canceled.</param>
     /// <remarks>
-    /// Use this overload when publishing a custom manifest from a trimmed or Native AOT application. The overload
-    /// that does not accept <paramref name="jsonTypeInfo"/> supports the library's built-in manifest models without
-    /// reflection, but preserves runtime-type serialization for custom manifest types.
+    /// Use this overload when publishing a custom manifest, including from a trimmed or Native AOT application. The
+    /// overload that does not accept <paramref name="jsonTypeInfo"/> supports the library's built-in manifest models
+    /// and <see cref="RawManifest"/> content only.
     /// </remarks>
     public static Task<ManifestPublishResult> PublishAsync<TManifest>(
         this IManifestOperations operations,

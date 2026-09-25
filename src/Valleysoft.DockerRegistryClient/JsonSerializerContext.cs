@@ -44,32 +44,13 @@ internal static class DockerRegistryClientJson
     internal static T Deserialize<T>(string content)
         where T : class
     {
-        JsonTypeInfo? typeInfo = GetTypeInfo(typeof(T));
-        if (typeInfo is null)
-        {
-#pragma warning disable IL2026, IL3050
-            T? result = JsonSerializer.Deserialize(content, typeof(T)) as T;
-#pragma warning restore IL2026, IL3050
-            return result ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}");
-        }
-
-        T? typedResult = JsonSerializer.Deserialize(content, typeInfo) as T;
-        return typedResult ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}");
+        T? result = JsonSerializer.Deserialize(content, GetTypeInfo(typeof(T))) as T;
+        return result ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}");
     }
 
     internal static T? DeserializeNullable<T>(string content)
-        where T : class
-    {
-        JsonTypeInfo? typeInfo = GetTypeInfo(typeof(T));
-        if (typeInfo is null)
-        {
-#pragma warning disable IL2026, IL3050
-            return JsonSerializer.Deserialize(content, typeof(T)) as T;
-#pragma warning restore IL2026, IL3050
-        }
-
-        return JsonSerializer.Deserialize(content, typeInfo) as T;
-    }
+        where T : class =>
+        JsonSerializer.Deserialize(content, GetTypeInfo(typeof(T))) as T;
 
     internal static byte[] SerializeManifest(IManifest manifest)
     {
@@ -107,12 +88,13 @@ internal static class DockerRegistryClientJson
                 DockerRegistryClientJsonContext.Default.OciImageIndex);
         }
 
-#pragma warning disable IL2026, IL3050
-        return JsonSerializer.SerializeToUtf8Bytes(manifest, manifestType);
-#pragma warning restore IL2026, IL3050
+        throw new NotSupportedException(
+            $"Serializing the manifest type '{manifestType.FullName}' is not supported. " +
+            "Publish the manifest with the overload that accepts a JsonTypeInfo<TManifest>, " +
+            "or publish its content as a RawManifest.");
     }
 
-    private static JsonTypeInfo? GetTypeInfo(Type type) => type switch
+    private static JsonTypeInfo GetTypeInfo(Type type) => type switch
     {
         Type t when t == typeof(Catalog) => DockerRegistryClientJsonContext.Default.Catalog,
         Type t when t == typeof(RepositoryTags) => DockerRegistryClientJsonContext.Default.RepositoryTags,
@@ -123,6 +105,6 @@ internal static class DockerRegistryClientJson
         Type t when t == typeof(ManifestList) => DockerRegistryClientJsonContext.Default.DockerManifestList,
         Type t when t == typeof(OciImageManifest) => DockerRegistryClientJsonContext.Default.OciImageManifest,
         Type t when t == typeof(OciImageIndex) => DockerRegistryClientJsonContext.Default.OciImageIndex,
-        _ => null
+        _ => throw new NotSupportedException($"JSON metadata is not available for type '{type.FullName}'.")
     };
 }
