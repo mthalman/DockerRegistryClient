@@ -44,13 +44,13 @@ internal static class DockerRegistryClientJson
     internal static T Deserialize<T>(string content)
         where T : class
     {
-        T? result = JsonSerializer.Deserialize(content, GetTypeInfo(typeof(T))) as T;
+        T? result = JsonSerializer.Deserialize(content, GetTypeInfo<T>());
         return result ?? throw new JsonException($"Unable to deserialize content:{Environment.NewLine}{content}");
     }
 
     internal static T? DeserializeNullable<T>(string content)
         where T : class =>
-        JsonSerializer.Deserialize(content, GetTypeInfo(typeof(T))) as T;
+        JsonSerializer.Deserialize(content, GetTypeInfo<T>());
 
     internal static byte[] SerializeManifest(IManifest manifest)
     {
@@ -93,6 +93,10 @@ internal static class DockerRegistryClientJson
             "Publish the manifest with the overload that accepts a JsonTypeInfo<TManifest>, " +
             "or publish its content as a RawManifest.");
     }
+
+    private static JsonTypeInfo<T> GetTypeInfo<T>()
+        where T : class =>
+        (JsonTypeInfo<T>)GetTypeInfo(typeof(T));
 
     private static JsonTypeInfo GetTypeInfo(Type type) => type switch
     {
