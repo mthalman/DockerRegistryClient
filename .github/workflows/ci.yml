@@ -121,7 +121,7 @@ jobs:
           retention-days: 14
 
       - name: Unit test results
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3
         if: ${{ !cancelled() && (steps.unit-tests.outcome == 'success' || steps.unit-tests.outcome == 'failure') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         with:
           name: Unit test results (.NET 10)
@@ -172,7 +172,7 @@ jobs:
           retention-days: 14
 
       - name: Integration test results
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3
         if: ${{ !cancelled() && (steps.integration-tests.outcome == 'success' || steps.integration-tests.outcome == 'failure') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         with:
           name: Integration test results (.NET 10)
