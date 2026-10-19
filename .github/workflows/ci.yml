@@ -101,7 +101,7 @@ jobs:
           $summary | Add-Content $env:GITHUB_STEP_SUMMARY
 
       - name: Upload unit coverage
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() && (steps.unit-tests.outcome == 'success' || steps.unit-tests.outcome == 'failure') }}
         with:
           name: unit-coverage-net8-on-net10
@@ -112,7 +112,7 @@ jobs:
           retention-days: 14
 
       - name: Upload unit test results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() && (steps.unit-tests.outcome == 'success' || steps.unit-tests.outcome == 'failure') }}
         with:
           name: unit-test-results-net10
@@ -163,7 +163,7 @@ jobs:
           --results-directory TestResults/integration
 
       - name: Upload integration test results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() && (steps.integration-tests.outcome == 'success' || steps.integration-tests.outcome == 'failure') }}
         with:
           name: integration-test-results-net10
