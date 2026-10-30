@@ -24,13 +24,10 @@ When both clients address the same registry origin (scheme, host, and port),
 `CopyAsync` first attempts to mount each missing blob from the source repository
 into the destination repository. If the registry does not support mounting or
 denies mount authorization, the operation stages the blob in a temporary file
-before uploading it. This fallback also applies when the token service returns
-HTTP 401 or 403 for the mount's requested scope. The source client's pull
-credentials and the destination client's upload credentials remain separate;
-upload authorization failures, transport failures, and malformed authentication
-responses still propagate. Staging prevents shared HTTP connection limits from
-blocking the transfer, but requires
-enough temporary disk space for the largest blob. Temporary files are created
+before uploading it, using the source client's credentials to download and the
+destination client's credentials to upload. Staging prevents shared HTTP
+connection limits from blocking the transfer, but requires enough temporary
+disk space for the largest blob. Temporary files are created
 with owner-only access on Unix. Downloads are limited to the size declared by
 the manifest descriptor and reject truncated or oversized content. Blobs that
 already exist in the destination repository are skipped.
