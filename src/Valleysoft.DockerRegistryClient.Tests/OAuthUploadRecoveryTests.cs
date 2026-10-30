@@ -8,6 +8,9 @@ using Xunit;
 
 namespace Valleysoft.DockerRegistryClient.Tests;
 
+/// <summary>
+/// Exercises upload authentication recovery and optional mount fallback through the built-in OAuth and redirect pipeline.
+/// </summary>
 public class OAuthUploadRecoveryTests
 {
     private const string Registry = "https://registry.example";
@@ -29,6 +32,9 @@ public class OAuthUploadRecoveryTests
         }
     }
 
+    /// <summary>
+    /// Ensures issued access tokens never become refresh credentials and retries preserve the upload body's initial position.
+    /// </summary>
     [Theory]
     [MemberData(nameof(RecoveryCases))]
     public async Task Upload_ExpiredAccessToken_RecoversUsingOriginalCredentials(
@@ -83,6 +89,9 @@ public class OAuthUploadRecoveryTests
         Assert.Equal(0, handler.RemainingRequestCount);
     }
 
+    /// <summary>
+    /// Ensures external upload destinations cannot use cached registry credentials to satisfy their own bearer challenges.
+    /// </summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -119,6 +128,9 @@ public class OAuthUploadRecoveryTests
         Assert.Equal(0, handler.RemainingRequestCount);
     }
 
+    /// <summary>
+    /// Allows denied optional mount scopes to fall back to separate source and destination credentials without hiding upload denial.
+    /// </summary>
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized, false)]
     [InlineData(HttpStatusCode.Forbidden, false)]
@@ -191,6 +203,9 @@ public class OAuthUploadRecoveryTests
         Assert.Equal(0, destinationHandler.RemainingRequestCount);
     }
 
+    /// <summary>
+    /// Preserves the original refresh credential when an accepted mount supplies a session whose access token expires during staging.
+    /// </summary>
     [Fact]
     public async Task Copy_MountStartsUpload_ExpiredAccessTokenRecoversUsingMountCredentials()
     {
@@ -229,6 +244,9 @@ public class OAuthUploadRecoveryTests
         Assert.Equal(0, destinationHandler.RemainingRequestCount);
     }
 
+    /// <summary>
+    /// Prevents mount fallback from masking cancellation, transport failures, server errors, or malformed authentication responses.
+    /// </summary>
     [Theory]
     [InlineData("transport")]
     [InlineData("canceled")]
