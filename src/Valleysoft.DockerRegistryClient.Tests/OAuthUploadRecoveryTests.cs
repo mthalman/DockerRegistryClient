@@ -33,7 +33,7 @@ public class OAuthUploadRecoveryTests
     }
 
     /// <summary>
-    /// Ensures issued access tokens never become refresh credentials and retries preserve the upload body's initial position.
+    /// Ensures recovery uses original credentials, preserves the body's initial position, and reuses renewed tokens across chunks.
     /// </summary>
     [Theory]
     [MemberData(nameof(RecoveryCases))]
@@ -71,6 +71,23 @@ public class OAuthUploadRecoveryTests
             AssertUploadBody(request, operation);
             return true;
         }, UploadResponse());
+        if (operation == "chunk")
+        {
+            handler.AddExpectedRequest(request =>
+            {
+                Assert.Equal(HttpMethod.Patch, request.Method);
+                Assert.Equal("renewed-access", request.Headers.Authorization?.Parameter);
+                AssertUploadBody(request, operation);
+                return true;
+            }, UploadResponse());
+            handler.AddExpectedRequest(request =>
+            {
+                Assert.Equal(HttpMethod.Put, request.Method);
+                Assert.Equal("renewed-access", request.Headers.Authorization?.Parameter);
+                Assert.Null(request.Content);
+                return true;
+            }, UploadResponse());
+        }
         using var client = new RegistryClient(Registry, Credentials(credentials), handler);
 
         BlobUploadInitializationResult start = await client.Blobs.BeginUploadAsync("destination");
@@ -78,7 +95,11 @@ public class OAuthUploadRecoveryTests
         stream.Position = 1;
         if (operation == "chunk")
         {
-            await client.Blobs.SendUploadStreamAsync(start.Location, stream, start.UploadContext);
+            BlobUploadStreamResult chunk = await client.Blobs.SendUploadStreamAsync(
+                start.Location, stream, start.UploadContext);
+            using var nextStream = new MemoryStream(Blob);
+            chunk = await client.Blobs.SendUploadStreamAsync(chunk.Location, nextStream, start.UploadContext);
+            await client.Blobs.EndUploadAsync(chunk.Location, Digest, start.UploadContext);
         }
         else
         {
@@ -87,6 +108,82 @@ public class OAuthUploadRecoveryTests
         }
 
         Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    /// <summary>
+    /// Keeps registry authorization cached when a successful redirected chunk finishes anonymously at external storage.
+    /// </summary>
+    [Fact]
+    public async Task Upload_ExternalRedirect_DoesNotReplaceCachedRegistryAuthorization()
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(_ => true, Challenge());
+        AddTokenRequest(handler, "basic", "registry-access");
+        handler.AddExpectedRequest(_ => true, UploadResponse());
+        handler.AddExpectedRequest(request =>
+        {
+            Assert.Equal("registry-access", request.Headers.Authorization?.Parameter);
+            Assert.Equal(Blob, Serialize(request.Content!));
+            return true;
+        }, new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)
+        {
+            Headers = { Location = new Uri("https://storage.example/upload") }
+        });
+        HttpResponseMessage externalResponse = UploadResponse();
+        externalResponse.Headers.Location = new Uri($"{Registry}{UploadLocation}");
+        handler.AddExpectedRequest(request =>
+        {
+            Assert.Equal("storage.example", request.RequestUri!.Host);
+            Assert.Null(request.Headers.Authorization);
+            Assert.Equal(Blob, Serialize(request.Content!));
+            return true;
+        }, externalResponse);
+        handler.AddExpectedRequest(request =>
+        {
+            Assert.Equal("registry.example", request.RequestUri!.Host);
+            Assert.Equal("registry-access", request.Headers.Authorization?.Parameter);
+            Assert.Equal(Blob, Serialize(request.Content!));
+            return true;
+        }, UploadResponse());
+        using var client = new RegistryClient(Registry, Credentials("basic"), handler);
+        BlobUploadInitializationResult start = await client.Blobs.BeginUploadAsync("destination");
+
+        using var firstStream = new MemoryStream(Blob);
+        BlobUploadStreamResult chunk = await client.Blobs.SendUploadStreamAsync(
+            start.Location, firstStream, start.UploadContext);
+        using var secondStream = new MemoryStream(Blob);
+        await client.Blobs.SendUploadStreamAsync(chunk.Location, secondStream, start.UploadContext);
+
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    /// <summary>
+    /// Rejects missing or empty tokens before a mount retry can turn a malformed token response into optional fallback.
+    /// </summary>
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{"token":null}""")]
+    [InlineData("""{"access_token":null}""")]
+    [InlineData("""{"token":""}""")]
+    [InlineData("""{"access_token":""}""")]
+    [InlineData("""{"token":" "}""")]
+    [InlineData("""{"access_token":" "}""")]
+    public async Task Mount_InvalidTokenResponse_ThrowsBeforeRetry(string tokenPayload)
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(request => request.RequestUri!.Query.Contains("mount="), Challenge());
+        var tokenContent = new DisposalTrackingContent(tokenPayload);
+        handler.AddExpectedRequest(request => request.RequestUri!.Host == "auth.example",
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = tokenContent });
+        handler.AddExpectedRequest(_ => true, new HttpResponseMessage(HttpStatusCode.Unauthorized));
+        using var client = new RegistryClient(Registry, Credentials("basic"), handler);
+
+        await Assert.ThrowsAsync<AuthenticationException>(() =>
+            ((BlobOperations)client.Blobs).MountAsync("destination", Digest, "source"));
+
+        Assert.True(tokenContent.IsDisposed);
+        Assert.Equal(2, handler.RequestCount);
+        Assert.Equal(1, handler.RemainingRequestCount);
     }
 
     /// <summary>
@@ -421,7 +518,7 @@ public class OAuthUploadRecoveryTests
         return handler;
     }
 
-    private sealed class DisposalTrackingContent() : StringContent("denied")
+    private sealed class DisposalTrackingContent(string content = "denied") : StringContent(content)
     {
         public bool IsDisposed { get; private set; }
 

@@ -283,6 +283,7 @@ internal class BlobOperations : IBlobOperations
             request,
             cancellationToken: cancellationToken,
             applyCredentials: isSameOrigin).ConfigureAwait(false);
+        UpdateUploadAuthorization(uploadContext, response, request);
         return new BlobUploadStreamResult(GetLocation(response, request), GetUploadId(response), GetRangeOffset(response));
     }
 
@@ -348,7 +349,20 @@ internal class BlobOperations : IBlobOperations
             request,
             cancellationToken: cancellationToken,
             applyCredentials: isSameOrigin).ConfigureAwait(false);
+        UpdateUploadAuthorization(uploadContext, response, request);
         return new BlobUploadResult(GetLocation(response, request), GetDigest(response));
+    }
+
+    private static void UpdateUploadAuthorization(
+        BlobUploadContext context,
+        HttpResponseMessage response,
+        HttpRequestMessage request)
+    {
+        HttpRequestMessage effectiveRequest = response.RequestMessage ?? request;
+        if (RegistryUriBuilder.HasSameOrigin(context.AuthorizationOrigin, effectiveRequest.RequestUri!))
+        {
+            context.Authorization = effectiveRequest.Headers.Authorization;
+        }
     }
 
     private static void ApplyUploadAuthorization(BlobUploadContext context, HttpRequestMessage request)

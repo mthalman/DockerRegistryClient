@@ -107,9 +107,15 @@ internal class OAuthDelegatingHandler : DelegatingHandler
             challenge,
             authorization,
             cancellationToken).ConfigureAwait(false);
+        string? accessToken = authToken.AccessToken ?? authToken.Token;
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            throw new AuthenticationException("The OAuth token response does not contain a nonempty access token.");
+        }
+
         request.Headers.Authorization = new AuthenticationHeaderValue(
             HttpBearerChallenge.Bearer,
-            authToken.AccessToken ?? authToken.Token);
+            accessToken);
         return request;
     }
 

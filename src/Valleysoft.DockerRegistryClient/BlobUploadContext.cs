@@ -17,7 +17,7 @@ public class BlobUploadContext
         AuthenticationState = authenticationState;
     }
 
-    internal AuthenticationHeaderValue? Authorization { get; }
+    internal AuthenticationHeaderValue? Authorization { get; set; }
 
     internal Uri AuthorizationOrigin { get; }
 
