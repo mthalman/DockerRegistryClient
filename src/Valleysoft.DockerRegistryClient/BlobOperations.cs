@@ -250,6 +250,11 @@ internal class BlobOperations : IBlobOperations
         {
             return BlobMountResult.Unsupported;
         }
+        catch (OAuthTokenRequestException)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return BlobMountResult.Unsupported;
+        }
     }
 
     /// <summary>
@@ -272,7 +277,7 @@ internal class BlobOperations : IBlobOperations
         using HttpRequestMessage request = new(HttpMethod.Patch, uploadUri);
         request.Content = CreateStreamContent(stream);
         bool isSameOrigin = RegistryUriBuilder.HasSameOrigin(Client.BaseUri, uploadUri);
-        request.Headers.Authorization = GetUploadAuthorization(uploadContext, uploadUri);
+        ApplyUploadAuthorization(uploadContext, request);
 
         using HttpResponseMessage response = await this.Client.SendRequestCoreAsync(
             request,
@@ -337,7 +342,7 @@ internal class BlobOperations : IBlobOperations
         using HttpRequestMessage request = new(HttpMethod.Put, uri);
         request.Content = content;
         bool isSameOrigin = RegistryUriBuilder.HasSameOrigin(Client.BaseUri, uri);
-        request.Headers.Authorization = GetUploadAuthorization(uploadContext, uri);
+        ApplyUploadAuthorization(uploadContext, request);
 
         using HttpResponseMessage response = await this.Client.SendRequestCoreAsync(
             request,
@@ -346,14 +351,28 @@ internal class BlobOperations : IBlobOperations
         return new BlobUploadResult(GetLocation(response, request), GetDigest(response));
     }
 
-    private static AuthenticationHeaderValue? GetUploadAuthorization(BlobUploadContext context, Uri destination) =>
-        RegistryUriBuilder.HasSameOrigin(context.AuthorizationOrigin, destination) ? context.Authorization : null;
+    private static void ApplyUploadAuthorization(BlobUploadContext context, HttpRequestMessage request)
+    {
+        if (RegistryUriBuilder.HasSameOrigin(context.AuthorizationOrigin, request.RequestUri!))
+        {
+            request.Headers.Authorization = context.Authorization;
+            if (context.AuthenticationState is { } state &&
+                RegistryUriBuilder.HasSameOrigin(state.Origin, request.RequestUri!))
+            {
+                request.Options.Set(OAuthDelegatingHandler.AuthenticationStateKey, state);
+            }
+        }
+    }
 
     private static BlobUploadContext GetUploadContext(HttpResponseMessage response, HttpRequestMessage request)
     {
         HttpRequestMessage effectiveRequest = response.RequestMessage ?? request;
+        effectiveRequest.Options.TryGetValue(
+            OAuthDelegatingHandler.AuthenticationStateKey, out var authenticationState);
         return new BlobUploadContext(
-            effectiveRequest.Headers.Authorization, effectiveRequest.RequestUri ?? request.RequestUri!);
+            effectiveRequest.Headers.Authorization,
+            effectiveRequest.RequestUri ?? request.RequestUri!,
+            authenticationState);
     }
 
     private static string GetLocation(HttpResponseMessage responseMsg, HttpRequestMessage request)

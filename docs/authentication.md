@@ -39,6 +39,11 @@ The client sends the basic credentials with the registry request. If the
 registry responds with a bearer challenge, the built-in OAuth handler uses the
 credentials when it requests an access token.
 
+Upload sessions cache issued access tokens at their originating scheme, host,
+and port. If a later upload request receives a bearer challenge, the handler
+uses the original credentials to acquire another access token, not the cached
+access token as a refresh credential.
+
 ## Use a token
 
 Use a previously obtained token. The default authentication scheme is
@@ -57,6 +62,10 @@ Pass a second argument when the token uses a different authentication scheme:
 ```csharp
 TokenCredentials credentials = new("mytoken", "CustomScheme");
 ```
+
+For bearer challenges, the built-in OAuth handler submits a caller-supplied
+`Bearer` token as a refresh token. This differs from an access token issued by
+the handler, which is used only to authorize registry requests.
 
 ## Provide custom credentials
 
