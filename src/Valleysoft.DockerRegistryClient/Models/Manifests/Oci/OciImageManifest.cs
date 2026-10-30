@@ -23,6 +23,7 @@ public class OciImageManifest : Manifest, IImageManifest
     /// Gets or sets the media type of the artifact represented by this manifest.
     /// </summary>
     [JsonPropertyName("artifactType")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ArtifactType { get; set; }
 
     /// <summary>
@@ -45,11 +46,13 @@ public class OciImageManifest : Manifest, IImageManifest
     /// Gets or sets the descriptor of the manifest to which this artifact refers.
     /// </summary>
     [JsonPropertyName("subject")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public OciDescriptor? Subject { get; set; }
 
     /// <summary>
     /// Gets or sets arbitrary metadata associated with the manifest.
     /// </summary>
     [JsonPropertyName("annotations")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IDictionary<string, string> Annotations { get; set; } = new Dictionary<string, string>();
 }

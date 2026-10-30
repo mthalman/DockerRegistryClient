@@ -321,13 +321,27 @@ public sealed class ReferrerOperationsTests
 
     [Theory]
     [InlineData("""{}""")]
+    [InlineData("not-json")]
     [InlineData("""{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":null}""")]
+    [InlineData("""{"schemaVersion":2,"manifests":[null]}""")]
+    [InlineData("""{"schemaVersion":2,"manifests":[{}]}""")]
+    [InlineData("""{"schemaVersion":2,"mediaType":null,"manifests":[]}""")]
+    [InlineData("""{"schemaVersion":2,"mediaType":"application/invalid","manifests":[]}""")]
+    [InlineData("""{"schemaVersion":2,"manifests":[{"mediaType":"application/example","digest":"invalid","size":1}]}""")]
+    [InlineData("""{"schemaVersion":2,"manifests":[{"mediaType":"application/example","digest":"sha256:abc","size":1}]}""")]
+    [InlineData("""{"schemaVersion":2,"manifests":[{"mediaType":"application/example","digest":"1algo:AbC_=-","size":-1}]}""")]
     public async Task GetAsync_StructurallyInvalidFallbackIndex_ReturnsEmptyPage(string json)
+    {
+        await AssertInvalidFallbackAsync(json, "application/spdx+json");
+        await AssertInvalidFallbackAsync(json, artifactType: null);
+    }
+
+    private static async Task AssertInvalidFallbackAsync(string json, string? artifactType)
     {
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
             HttpMethod.Get,
-            ReferrersUri + "?artifactType=application%2Fspdx%2Bjson",
+            ReferrersUri + (artifactType is null ? "" : "?artifactType=application%2Fspdx%2Bjson"),
             CreateNotFoundResponse());
         HttpResponseMessage invalidIndex = CreateJsonResponse(json);
         invalidIndex.Content.Headers.ContentType =
@@ -342,10 +356,34 @@ public sealed class ReferrerOperationsTests
         Page<OciImageIndex> page = await client.Referrers.GetAsync(
             "repository",
             SubjectDigest,
-            "application/spdx+json");
+            artifactType);
 
         Assert.Empty(page.Value.Manifests);
         Assert.Null(page.NextPageLink);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("application/spdx+json")]
+    public async Task GetAsync_FallbackWithoutOptionalHeadersOrMediaType_ReturnsDescriptors(string? artifactType)
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(HttpMethod.Get,
+            ReferrersUri + (artifactType is null ? "" : "?artifactType=application%2Fspdx%2Bjson"),
+            CreateNotFoundResponse());
+        HttpResponseMessage response = CreateJsonResponse(
+            """{"schemaVersion":2,"manifests":[{"mediaType":"application/example","digest":"1algo:AbC_=-","size":0,"artifactType":"application/spdx+json"}]}""");
+        response.Content.Headers.ContentType =
+            new System.Net.Http.Headers.MediaTypeHeaderValue(ManifestMediaTypes.OciImageIndex1);
+        handler.AddExpectedRequest(HttpMethod.Get,
+            $"https://registry.example/v2/repository/manifests/{SubjectTag}", response);
+        using var client = new RegistryClient("registry.example", null, new HttpClient(handler));
+
+        Page<OciImageIndex> page = await client.Referrers.GetAsync("repository", SubjectDigest, artifactType);
+
+        Assert.Equal("1algo:AbC_=-", Assert.Single(page.Value.Manifests).Digest);
+        Assert.Null(page.NextPageLink);
+        Assert.Equal(0, handler.RemainingRequestCount);
     }
 
     [Fact]

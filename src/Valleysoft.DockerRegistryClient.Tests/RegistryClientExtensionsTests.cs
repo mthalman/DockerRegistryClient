@@ -647,25 +647,34 @@ public class RegistryClientExtensionsTests
         Assert.Equal(0, destinationHandler.RemainingRequestCount);
     }
 
-    [Fact]
-    public async Task CopyAsync_SubjectAndIndexReferenceSameManifest_CopiesItOnceBeforeRoot()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CopyAsync_SubjectAndIndexReferenceSameManifest_CopiesItOnceBeforeRoot(bool omitDigestHeaders)
     {
-        const string childDigest = "custom:child";
         const string rawMediaType = "application/vnd.example.manifest.v1+json";
         byte[] child = Encoding.UTF8.GetBytes("""{"opaque":true}""");
+        string childDigest = RegistryFixture.GetDigest(child);
         byte[] root = Encoding.UTF8.GetBytes(
             $$"""
             {"schemaVersion":2,"mediaType":"{{OciIndexMediaType}}","subject":{"mediaType":"{{rawMediaType}}","digest":"{{childDigest}}","size":15},"manifests":[{"mediaType":"{{rawMediaType}}","digest":"{{childDigest}}","size":15}]}
             """);
         var sourceHandler = new MockHttpMessageHandler();
+        HttpResponseMessage rootResponse = ManifestResponse(OciIndexMediaType, RootDigest, root);
+        HttpResponseMessage childResponse = ManifestResponse(rawMediaType, childDigest, child);
+        if (omitDigestHeaders)
+        {
+            rootResponse.Headers.Remove("Docker-Content-Digest");
+            childResponse.Headers.Remove("Docker-Content-Digest");
+        }
         sourceHandler.AddExpectedRequest(
             HttpMethod.Get,
             "https://source.example/v2/source/manifests/latest",
-            ManifestResponse(OciIndexMediaType, RootDigest, root));
+            rootResponse);
         sourceHandler.AddExpectedRequest(
             HttpMethod.Get,
             $"https://source.example/v2/source/manifests/{childDigest}",
-            ManifestResponse(rawMediaType, childDigest, child));
+            childResponse);
         var destinationHandler = new MockHttpMessageHandler();
         destinationHandler.AddExpectedRequest(
             HttpMethod.Head,

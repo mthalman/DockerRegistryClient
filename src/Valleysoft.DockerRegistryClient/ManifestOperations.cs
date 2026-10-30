@@ -42,7 +42,7 @@ internal class ManifestOperations : IManifestWriteOperations
                 byte[] content = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
 #endif
 
-                return GetResult(response, content);
+                return GetResult(response, content, tagOrDigest);
             }).ConfigureAwait(false);
     }
 
@@ -58,21 +58,18 @@ internal class ManifestOperations : IManifestWriteOperations
         using HttpRequestMessage request = CreateGetRequestMessage(GetManifestUri(repositoryName, tagOrDigest), HttpMethod.Head);
         return await OperationsHelper.HandleNotFoundErrorAsync(
             NotFoundMessage,
-            () => this.Client.SendRequestAsync(
-                request,
-                (response, content) => GetDigest(response),
-                cancellationToken)).ConfigureAwait(false);
+            async () =>
+            {
+                using HttpResponseMessage response = await this.Client.SendRequestCoreAsync(
+                    request, cancellationToken: cancellationToken).ConfigureAwait(false);
+                return GetOptionalDigest(response) ??
+                    (await GetAsync(repositoryName, tagOrDigest, cancellationToken).ConfigureAwait(false)).DockerContentDigest;
+            }).ConfigureAwait(false);
     }
 
     public async Task<string> GetDigestWithHttpMessagesAsync(string repositoryName, string tagOrDigest, CancellationToken cancellationToken = default)
     {
-        using HttpRequestMessage request = CreateGetRequestMessage(GetManifestUri(repositoryName, tagOrDigest), HttpMethod.Head);
-        return await OperationsHelper.HandleNotFoundErrorAsync(
-            NotFoundMessage,
-            () => this.Client.SendRequestAsync(
-                request,
-                (response, content) => GetDigest(response),
-                cancellationToken)).ConfigureAwait(false);
+        return await GetDigestAsync(repositoryName, tagOrDigest, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<ManifestPublishResult> PublishAsync(
@@ -142,7 +139,7 @@ internal class ManifestOperations : IManifestWriteOperations
             : null;
         if (subjectMetadata is not null && !response.Headers.Contains(OciSubjectHeader))
         {
-            string manifestDigest = GetPublishedDigest(tagOrDigest, responseDigest, content);
+            string manifestDigest = GetContentDigest(tagOrDigest, responseDigest, content);
             await UpdateReferrersFallbackAsync(
                 repositoryName,
                 manifestDigest,
@@ -214,9 +211,6 @@ internal class ManifestOperations : IManifestWriteOperations
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*", quality: 0.1));
         return request;
     }
-
-    private static string GetDigest(HttpResponseMessage response) =>
-        response.Headers.GetValues(DockerContentDigestHeader).First();
 
     private static string? GetOptionalDigest(HttpResponseMessage response) =>
         response.Headers.TryGetValues(DockerContentDigestHeader, out IEnumerable<string>? values)
@@ -358,7 +352,8 @@ internal class ManifestOperations : IManifestWriteOperations
 #endif
             string mediaType = response.Content.Headers.ContentType?.MediaType ??
                 throw new InvalidOperationException("Response content type is not set.");
-            return new StoredManifest(content, mediaType, response.Headers.ETag);
+            return new StoredManifest(content, mediaType,
+                response.Headers.ETag is { IsWeak: false } entityTag ? entityTag : null);
         }
         catch (RegistryException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
@@ -391,23 +386,7 @@ internal class ManifestOperations : IManifestWriteOperations
         StoredManifest storedIndex,
         string fallbackTag)
     {
-        using JsonDocument document = JsonDocument.Parse(storedIndex.Content);
-        JsonElement root = document.RootElement;
-        bool isValid = storedIndex.MediaType.Equals(
-                ManifestMediaTypes.OciImageIndex1,
-                StringComparison.OrdinalIgnoreCase) &&
-            root.ValueKind == JsonValueKind.Object &&
-            root.TryGetProperty("schemaVersion", out JsonElement schemaVersion) &&
-            schemaVersion.ValueKind == JsonValueKind.Number &&
-            schemaVersion.TryGetInt32(out int schemaVersionValue) &&
-            schemaVersionValue == 2 &&
-            root.TryGetProperty("mediaType", out JsonElement mediaType) &&
-            mediaType.ValueKind == JsonValueKind.String &&
-            mediaType.GetString() == ManifestMediaTypes.OciImageIndex1 &&
-            root.TryGetProperty("manifests", out JsonElement manifests) &&
-            manifests.ValueKind == JsonValueKind.Array &&
-            manifests.EnumerateArray().All(IsValidDescriptor);
-        if (!isValid)
+        if (!ReferrerOperations.IsValidFallbackIndex(storedIndex.MediaType, storedIndex.Content))
         {
             throw new InvalidOperationException(
                 $"The referrers fallback tag '{fallbackTag}' does not contain a valid OCI image index.");
@@ -415,20 +394,6 @@ internal class ManifestOperations : IManifestWriteOperations
 
         return Deserialize<OciImageIndex>(storedIndex.Content);
     }
-
-    private static bool IsValidDescriptor(JsonElement descriptor) =>
-        descriptor.ValueKind == JsonValueKind.Object &&
-        descriptor.TryGetProperty("mediaType", out JsonElement mediaType) &&
-        mediaType.ValueKind == JsonValueKind.String &&
-        !string.IsNullOrWhiteSpace(mediaType.GetString()) &&
-        descriptor.TryGetProperty("digest", out JsonElement digest) &&
-        digest.ValueKind == JsonValueKind.String &&
-        digest.GetString() is string digestValue &&
-        RegistryReferenceValidator.IsValidDigest(digestValue) &&
-        descriptor.TryGetProperty("size", out JsonElement size) &&
-        size.ValueKind == JsonValueKind.Number &&
-        size.TryGetInt64(out long sizeValue) &&
-        sizeValue >= 0;
 
     private static SubjectManifestMetadata? GetSubjectMetadata(string mediaType, byte[] content)
     {
@@ -463,7 +428,7 @@ internal class ManifestOperations : IManifestWriteOperations
         return null;
     }
 
-    private static string GetPublishedDigest(
+    private static string GetContentDigest(
         string tagOrDigest,
         string? responseDigest,
         byte[] content)
@@ -523,7 +488,7 @@ internal class ManifestOperations : IManifestWriteOperations
         return true;
     }
 
-    private static ManifestInfo GetResult(HttpResponseMessage response, byte[] content)
+    private static ManifestInfo GetResult(HttpResponseMessage response, byte[] content, string tagOrDigest)
     {
         if (response.Content is null)
         {
@@ -531,7 +496,16 @@ internal class ManifestOperations : IManifestWriteOperations
         }
 
         string? mediaType = response.Content.Headers.ContentType?.MediaType;
-        string dockerContentDigest = GetDigest(response);
+        string? responseDigest = GetOptionalDigest(response);
+        if (responseDigest is not null)
+        {
+            VerifyDigestIfSupported(responseDigest, content);
+            if (RegistryReferenceValidator.IsValidDigest(tagOrDigest))
+            {
+                VerifyDigestIfSupported(tagOrDigest, content);
+            }
+        }
+        string dockerContentDigest = GetContentDigest(tagOrDigest, responseDigest, content);
 
         if (mediaType is null)
         {

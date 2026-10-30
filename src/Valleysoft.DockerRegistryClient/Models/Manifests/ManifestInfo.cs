@@ -9,7 +9,7 @@ public class ManifestInfo
     /// Initializes manifest information without original serialized content.
     /// </summary>
     /// <param name="mediaType">Media type reported by the registry.</param>
-    /// <param name="dockerContentDigest">Canonical digest reported by the registry.</param>
+    /// <param name="dockerContentDigest">Digest identifying the manifest.</param>
     /// <param name="manifest">Parsed manifest.</param>
     public ManifestInfo(string mediaType, string dockerContentDigest, IManifest manifest)
         : this(mediaType, dockerContentDigest, manifest, ReadOnlyMemory<byte>.Empty)
@@ -20,7 +20,7 @@ public class ManifestInfo
     /// Initializes manifest information.
     /// </summary>
     /// <param name="mediaType">Media type reported by the registry.</param>
-    /// <param name="dockerContentDigest">Canonical digest reported by the registry.</param>
+    /// <param name="dockerContentDigest">Digest identifying the manifest.</param>
     /// <param name="manifest">Parsed manifest.</param>
     /// <param name="content">Original serialized manifest bytes.</param>
     public ManifestInfo(
@@ -41,7 +41,7 @@ public class ManifestInfo
     public string MediaType { get; }
 
     /// <summary>
-    /// Gets the canonical digest reported by the registry.
+    /// Gets the registry's digest, or the requested digest or a SHA-256 digest of the original content when the response omits it.
     /// </summary>
     public string DockerContentDigest { get; }
 
