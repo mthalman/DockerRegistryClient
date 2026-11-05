@@ -144,10 +144,10 @@ internal class ManifestOperations : IManifestWriteOperations
 
         var result = new ManifestPublishResult(GetLocation(response), responseDigest);
 
-        SubjectManifestMetadata? subjectMetadata = maintainReferrersFallback
+        SubjectManifestMetadata? subjectMetadata = maintainReferrersFallback && !response.Headers.Contains(OciSubjectHeader)
             ? GetSubjectMetadata(mediaType, content)
             : null;
-        if (subjectMetadata is not null && !response.Headers.Contains(OciSubjectHeader))
+        if (subjectMetadata is not null)
         {
             string manifestDigest = GetContentDigest(tagOrDigest, responseDigest, content);
             await UpdateReferrersFallbackAsync(
@@ -383,7 +383,8 @@ internal class ManifestOperations : IManifestWriteOperations
         {
             using HttpResponseMessage response = await Client.SendRequestCoreAsync(
                 request,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+                cancellationToken: cancellationToken,
+                skipSuccessfulResponseBody: true).ConfigureAwait(false);
             return true;
         }
         catch (RegistryException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)

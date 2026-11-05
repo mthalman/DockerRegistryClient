@@ -180,7 +180,8 @@ public class RegistryClient : IDisposable
         bool ignoreUnsuccessfulResponse = false,
         CancellationToken cancellationToken = default,
         HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead,
-        bool applyCredentials = true)
+        bool applyCredentials = true,
+        bool skipSuccessfulResponseBody = false)
     {
         if (applyCredentials && this.credentials is not null && request.Headers.Authorization is null)
         {
@@ -189,7 +190,20 @@ public class RegistryClient : IDisposable
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        HttpResponseMessage response = await this.HttpClient.SendAsync(request, completionOption, cancellationToken).ConfigureAwait(false);
+        // ResponseHeadersRead ends HttpClient's timeout at headers; retain it through error parsing.
+        using CancellationTokenSource? timeoutSource =
+            skipSuccessfulResponseBody && this.HttpClient.Timeout != Timeout.InfiniteTimeSpan
+                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                : null;
+        timeoutSource?.CancelAfter(this.HttpClient.Timeout);
+        CancellationToken requestCancellationToken = timeoutSource?.Token ?? cancellationToken;
+        if (skipSuccessfulResponseBody)
+        {
+            completionOption = HttpCompletionOption.ResponseHeadersRead;
+        }
+
+        HttpResponseMessage response = await this.HttpClient.SendAsync(
+            request, completionOption, requestCancellationToken).ConfigureAwait(false);
 
         if (ignoreUnsuccessfulResponse)
         {
@@ -200,16 +214,28 @@ public class RegistryClient : IDisposable
         {
             try
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                requestCancellationToken.ThrowIfCancellationRequested();
 
                 string errorContent = string.Empty;
                 if (response.Content is not null)
                 {
+                    if (skipSuccessfulResponseBody)
+                    {
+                        using var bufferedContent = new CancellationAwareContent(
+                            response.Content, requestCancellationToken);
+                        await bufferedContent.LoadIntoBufferAsync(
+                            this.HttpClient.MaxResponseContentBufferSize).ConfigureAwait(false);
+                        errorContent = await bufferedContent.ReadAsStringAsync(
+                            requestCancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
 #if NET5_0_OR_GREATER
-                    errorContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                        errorContent = await response.Content.ReadAsStringAsync(requestCancellationToken).ConfigureAwait(false);
 #else
-                    errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 #endif
+                    }
                 }
 
                 ErrorResult? errorResult = ParseErrorResult(response, errorContent);
@@ -230,6 +256,32 @@ public class RegistryClient : IDisposable
         response.EnsureSuccessStatusCode();
 
         return response;
+    }
+
+    private sealed class CancellationAwareContent : HttpContent
+    {
+        private readonly HttpContent content;
+        private readonly CancellationToken cancellationToken;
+
+        public CancellationAwareContent(HttpContent content, CancellationToken cancellationToken)
+        {
+            this.content = content;
+            this.cancellationToken = cancellationToken;
+            foreach (var header in content.Headers)
+            {
+                Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+        }
+
+        // net8.0's bounded LoadIntoBufferAsync overload cannot accept a cancellation token.
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            content.CopyToAsync(stream, context, cancellationToken);
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = content.Headers.ContentLength ?? 0;
+            return content.Headers.ContentLength.HasValue;
+        }
     }
 
     private static ErrorResult? ParseErrorResult(HttpResponseMessage response, string errorContent)
