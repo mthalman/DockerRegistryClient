@@ -104,6 +104,63 @@ public partial class ManifestOperationsTests
         await Assert.ThrowsAsync<ObjectDisposedException>(() => errorContent.ReadAsStringAsync());
     }
 
+    [Fact]
+    public async Task DeleteAsync_NativeReferrersStalledErrorBody_RespectsHttpClientTimeout()
+    {
+        var errorContent = new BlockingProbeErrorContent();
+        var handler = CreateStalledProbeHandler(errorContent);
+        using var httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(1) };
+        using var client = new RegistryClient("registry.example", null, httpClient);
+        using var cleanup = new CancellationTokenSource();
+        Task<Exception?> outcome = Record.ExceptionAsync(
+            () => client.Manifests.DeleteAsync("repo", ManifestDigest, cleanup.Token));
+
+        try
+        {
+            await errorContent.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Exception? exception = await outcome.WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.IsAssignableFrom<OperationCanceledException>(exception);
+            Assert.False(cleanup.IsCancellationRequested);
+            Assert.True(errorContent.IsDisposed);
+            Assert.Equal(2, handler.RequestCount);
+        }
+        finally
+        {
+            cleanup.Cancel();
+            await outcome;
+        }
+    }
+
+    [Fact]
+    public async Task DeleteAsync_NativeReferrersStalledErrorBody_InfiniteTimeoutPreservesCallerCancellation()
+    {
+        var errorContent = new BlockingProbeErrorContent();
+        var handler = CreateStalledProbeHandler(errorContent);
+        using var httpClient = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
+        using var client = new RegistryClient("registry.example", null, httpClient);
+        using var cancellation = new CancellationTokenSource();
+        Task<Exception?> outcome = Record.ExceptionAsync(
+            () => client.Manifests.DeleteAsync("repo", ManifestDigest, cancellation.Token));
+
+        try
+        {
+            await errorContent.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.False(outcome.IsCompleted);
+            cancellation.Cancel();
+            Exception? exception = await outcome.WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.IsAssignableFrom<OperationCanceledException>(exception);
+            Assert.True(errorContent.IsDisposed);
+            Assert.Equal(2, handler.RequestCount);
+        }
+        finally
+        {
+            cancellation.Cancel();
+            await outcome;
+        }
+    }
+
     [Theory]
     [InlineData("not-json", ManifestMediaTypes.OciManifestSchema1, true)]
     [InlineData("""{"annotations":42}""", ManifestMediaTypes.OciManifestSchema1, true)]
@@ -285,6 +342,48 @@ public partial class ManifestOperationsTests
         Assert.Equal(0, sourceHandler.RemainingRequestCount);
         Assert.Equal(0, destinationHandler.RemainingRequestCount);
         Assert.Equal(1, destinationHandler.RequestCount);
+    }
+
+    private static MockHttpMessageHandler CreateStalledProbeHandler(HttpContent content)
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Get,
+            $"https://registry.example/v2/repo/manifests/{ManifestDigest}",
+            ManifestResponse(ManifestMediaTypes.OciManifestSchema1, CreateSubjectManifestContent()));
+        handler.AddExpectedRequest(
+            HttpMethod.Get,
+            $"https://registry.example/v2/repo/referrers/{SubjectDigest}",
+            new HttpResponseMessage(HttpStatusCode.Forbidden) { Content = content });
+        return handler;
+    }
+
+    private sealed class BlockingProbeErrorContent : HttpContent
+    {
+        public TaskCompletionSource ReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool IsDisposed { get; private set; }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            SerializeToStreamAsync(stream, context, CancellationToken.None);
+
+        protected override async Task SerializeToStreamAsync(
+            Stream stream, TransportContext? context, CancellationToken cancellationToken)
+        {
+            ReadStarted.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = true;
+            base.Dispose(disposing);
+        }
     }
 
     private sealed class ProbeContent : HttpContent
