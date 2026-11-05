@@ -137,10 +137,10 @@ internal class ManifestOperations : IManifestWriteOperations
 
         var result = new ManifestPublishResult(GetLocation(response), responseDigest);
 
-        SubjectManifestMetadata? subjectMetadata = maintainReferrersFallback
+        SubjectManifestMetadata? subjectMetadata = maintainReferrersFallback && !response.Headers.Contains(OciSubjectHeader)
             ? GetSubjectMetadata(mediaType, content)
             : null;
-        if (subjectMetadata is not null && !response.Headers.Contains(OciSubjectHeader))
+        if (subjectMetadata is not null)
         {
             string manifestDigest = GetPublishedDigest(tagOrDigest, responseDigest, content);
             await UpdateReferrersFallbackAsync(
@@ -378,7 +378,8 @@ internal class ManifestOperations : IManifestWriteOperations
         {
             using HttpResponseMessage response = await Client.SendRequestCoreAsync(
                 request,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+                cancellationToken: cancellationToken,
+                completionOption: HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
             return true;
         }
         catch (RegistryException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -486,10 +487,7 @@ internal class ManifestOperations : IManifestWriteOperations
         return $"sha256:{encoded}";
     }
 
-    internal static bool VerifyDigestIfSupported(string digest, ReadOnlyMemory<byte> content) =>
-        VerifyDigestIfSupported(digest, content.ToArray());
-
-    private static bool VerifyDigestIfSupported(string digest, byte[] content)
+    internal static bool VerifyDigestIfSupported(string digest, ReadOnlyMemory<byte> content)
     {
         if (!RegistryReferenceValidator.IsValidDigest(digest))
         {
@@ -498,19 +496,19 @@ internal class ManifestOperations : IManifestWriteOperations
 
         int separatorIndex = digest.IndexOf(':');
         string algorithm = digest.Substring(0, separatorIndex);
-        using HashAlgorithm? hashAlgorithm = algorithm switch
+        byte[]? hash = algorithm switch
         {
-            "sha256" => SHA256.Create(),
-            "sha384" => SHA384.Create(),
-            "sha512" => SHA512.Create(),
+            "sha256" => SHA256.HashData(content.Span),
+            "sha384" => SHA384.HashData(content.Span),
+            "sha512" => SHA512.HashData(content.Span),
             _ => null
         };
-        if (hashAlgorithm is null)
+        if (hash is null)
         {
             return false;
         }
 
-        string actual = BitConverter.ToString(hashAlgorithm.ComputeHash(content))
+        string actual = BitConverter.ToString(hash)
             .Replace("-", string.Empty)
             .ToLowerInvariant();
         string expected = digest.Substring(separatorIndex + 1);
