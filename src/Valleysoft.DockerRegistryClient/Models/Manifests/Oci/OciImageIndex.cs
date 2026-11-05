@@ -35,18 +35,21 @@ public class OciImageIndex : Manifest, IManifestList
     /// Gets or sets the media type of the artifact represented by this index.
     /// </summary>
     [JsonPropertyName("artifactType")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ArtifactType { get; set; }
 
     /// <summary>
     /// Gets or sets the descriptor of the manifest to which this artifact index refers.
     /// </summary>
     [JsonPropertyName("subject")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public OciDescriptor? Subject { get; set; }
 
     /// <summary>
     /// Gets or sets arbitrary metadata associated with the index. A <see langword="null"/> JSON value is normalized to an empty dictionary.
     /// </summary>
     [JsonPropertyName("annotations")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IDictionary<string, string> Annotations
     {
         get => annotations;

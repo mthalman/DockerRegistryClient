@@ -11,5 +11,6 @@ public class ManifestReference : OciDescriptor, IManifestReference
     /// The platform object describes the platform which the image in the manifest runs on. A full list of valid operating system and architecture values are listed in the Go language documentation for $GOOS and $GOARCH (https://golang.org/doc/install/source#environment).
     /// </summary>
     [JsonPropertyName("platform")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ManifestPlatform? Platform { get; set; }
 }

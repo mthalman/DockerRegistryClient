@@ -102,10 +102,10 @@ public static class RegistryClientExtensions
                 sourceReference,
                 cancellationToken).ConfigureAwait(false);
 
-            AddVerifiedManifestIdentity(root.DockerContentDigest, root.Content);
+            AddVerifiedManifestIdentity(root.DockerContentDigest);
             if (RegistryReferenceValidator.IsValidDigest(sourceReference))
             {
-                AddVerifiedManifestIdentity(sourceReference, root.Content);
+                AddVerifiedManifestIdentity(sourceReference);
             }
             await CopyDependenciesAsync(root.Manifest, cancellationToken).ConfigureAwait(false);
 
@@ -154,10 +154,6 @@ public static class RegistryClientExtensions
                     $"Manifest '{descriptor.Digest}' has media type '{manifest.MediaType}', but its descriptor declares '{descriptor.MediaType}'.");
             }
 
-            ManifestOperations.VerifyDigestIfSupported(descriptor.Digest, manifest.Content);
-            ManifestOperations.VerifyDigestIfSupported(
-                manifest.DockerContentDigest,
-                manifest.Content);
             await CopyDependenciesAsync(manifest.Manifest, cancellationToken).ConfigureAwait(false);
             if (!exists)
             {
@@ -497,11 +493,9 @@ public static class RegistryClientExtensions
             manifestDescriptors[descriptor.Digest] = metadata;
         }
 
-        private void AddVerifiedManifestIdentity(
-            string digest,
-            ReadOnlyMemory<byte> content)
+        private void AddVerifiedManifestIdentity(string digest)
         {
-            if (ManifestOperations.VerifyDigestIfSupported(digest, content))
+            if (ManifestOperations.GetSupportedDigestAlgorithm(digest).Name is not null)
             {
                 visitedManifestDigests.Add(digest);
             }

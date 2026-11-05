@@ -530,6 +530,10 @@ public partial class ManifestOperationsTests
     }
 
     [Theory]
+    [InlineData("""{"schemaVersion":2,"mediaType":null,"manifests":[]}""")]
+    [InlineData("""{"schemaVersion":2,"mediaType":"application/invalid","manifests":[]}""")]
+    [InlineData("""{"schemaVersion":2,"manifests":null}""")]
+    [InlineData("""{"schemaVersion":2}""")]
     [InlineData("""{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{}]}""")]
     [InlineData("""{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[null]}""")]
     [InlineData("""{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"invalid","size":1}]}""")]
