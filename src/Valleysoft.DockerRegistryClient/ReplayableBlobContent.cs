@@ -3,7 +3,9 @@ using System.Net.Http.Headers;
 
 namespace Valleysoft.DockerRegistryClient;
 
-internal sealed class ReplayableBlobContent : HttpContent, IReplayableHttpContent
+// StreamContent's non-duplex contract keeps SendAsync awaiting validation and source disposal,
+// even when an HTTP/2 destination responds before the upload finishes.
+internal sealed class ReplayableBlobContent : StreamContent, IReplayableHttpContent
 {
     private const int BufferSize = 81920;
     private readonly BlobOperations source;
@@ -11,6 +13,7 @@ internal sealed class ReplayableBlobContent : HttpContent, IReplayableHttpConten
     private readonly string digest;
     private readonly long size;
     private readonly CancellationToken copyCancellationToken;
+    private Task? serializationTask;
 
     public ReplayableBlobContent(
         BlobOperations source,
@@ -18,6 +21,7 @@ internal sealed class ReplayableBlobContent : HttpContent, IReplayableHttpConten
         string digest,
         long size,
         CancellationToken cancellationToken)
+        : base(Stream.Null)
     {
         this.source = source;
         this.repositoryName = repositoryName;
@@ -33,19 +37,40 @@ internal sealed class ReplayableBlobContent : HttpContent, IReplayableHttpConten
         return true;
     }
 
-    protected override async Task SerializeToStreamAsync(
-        Stream stream,
-        TransportContext? context)
-    {
-        await SerializeToStreamAsync(
-            stream,
-            copyCancellationToken).ConfigureAwait(false);
-    }
-
-#if NET5_0_OR_GREATER
-    protected override async Task SerializeToStreamAsync(
+    // The base stream only selects the transport contract; each serialization opens its own source.
+    protected override void SerializeToStream(
         Stream stream,
         TransportContext? context,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Blob copy content requires asynchronous serialization.");
+
+    protected override Stream CreateContentReadStream(CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Blob copy content requires asynchronous serialization.");
+
+    protected override Task<Stream> CreateContentReadStreamAsync() =>
+        CreateContentReadStreamAsync(CancellationToken.None);
+
+    protected override async Task<Stream> CreateContentReadStreamAsync(CancellationToken cancellationToken) =>
+        new MemoryStream(
+            await ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false),
+            writable: false);
+
+    protected override Task SerializeToStreamAsync(
+        Stream stream,
+        TransportContext? context) =>
+        serializationTask = SerializeToStreamAsync(
+            stream,
+            copyCancellationToken);
+
+#if NET5_0_OR_GREATER
+    protected override Task SerializeToStreamAsync(
+        Stream stream,
+        TransportContext? context,
+        CancellationToken cancellationToken) =>
+        serializationTask = SerializeWithLinkedCancellationAsync(stream, cancellationToken);
+
+    private async Task SerializeWithLinkedCancellationAsync(
+        Stream stream,
         CancellationToken cancellationToken)
     {
         using CancellationTokenSource linkedCancellationSource =
@@ -57,6 +82,11 @@ internal sealed class ReplayableBlobContent : HttpContent, IReplayableHttpConten
             linkedCancellationSource.Token).ConfigureAwait(false);
     }
 #endif
+
+    // HTTP/2 may suppress serialization errors after a successful response followed by RST_STREAM(NO_ERROR).
+    public Task EnsureSerializationCompletedAsync() =>
+        serializationTask ?? Task.FromException(
+            new InvalidOperationException("The destination accepted the upload without serializing the blob."));
 
     private async Task SerializeToStreamAsync(
         Stream stream,

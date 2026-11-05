@@ -60,6 +60,11 @@ length does not match. If an upload is redirected while preserving its request
 body, the source blob is downloaded again so the redirected request can be
 replayed safely.
 
+An early successful upload response, including over HTTP/2, does not bypass
+source-size validation. Each streamed upload must finish serialization and
+dispose its source response before the copy publishes dependent manifests.
+An interrupted upload fails the copy even if the destination reported success.
+
 Destination uploads, including mount-fallback sessions, may use external HTTP
 or HTTPS storage. They follow the same
 [upload destination policy](blobs.md#upload-a-blob-in-chunks) as direct uploads.

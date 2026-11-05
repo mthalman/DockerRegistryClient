@@ -322,6 +322,7 @@ public static class RegistryClientExtensions
                         upload.UploadContext,
                         content,
                         cancellationToken).ConfigureAwait(false);
+                    await content.EnsureSerializationCompletedAsync().ConfigureAwait(false);
                 }
             }
             catch (Exception exception)

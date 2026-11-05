@@ -5,6 +5,48 @@ namespace Valleysoft.DockerRegistryClient.Tests;
 
 public class ReplayableBlobContentTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadAsStreamAsync_SerializesBlobInsteadOfBasePlaceholder(bool withCancellationToken)
+    {
+        var sourceHandler = new MockHttpMessageHandler();
+        using var sourceStream = new MemoryStream([1, 2, 3, 4]);
+        sourceHandler.AddExpectedRequest(
+            HttpMethod.Get,
+            "https://source.example/v2/source/blobs/custom:blob",
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(sourceStream) });
+        using var sourceClient = new RegistryClient("source.example", null, sourceHandler);
+        using var content = new ReplayableBlobContent(
+            (BlobOperations)sourceClient.Blobs, "source", "custom:blob", 4, CancellationToken.None);
+        using var cancellationSource = new CancellationTokenSource();
+
+        using Stream result = withCancellationToken
+            ? await content.ReadAsStreamAsync(cancellationSource.Token)
+            : await content.ReadAsStreamAsync();
+        using var destination = new MemoryStream();
+        await result.CopyToAsync(destination);
+        await content.EnsureSerializationCompletedAsync();
+
+        Assert.Equal([1, 2, 3, 4], destination.ToArray());
+        Assert.False(result.CanWrite);
+        Assert.False(sourceStream.CanRead);
+        Assert.Equal(0, sourceHandler.RemainingRequestCount);
+    }
+
+    [Fact]
+    public async Task UnserializedContent_RejectsCompletionAndSynchronousPlaceholderReads()
+    {
+        var sourceHandler = new MockHttpMessageHandler();
+        using var sourceClient = new RegistryClient("source.example", null, sourceHandler);
+        using var content = new ReplayableBlobContent(
+            (BlobOperations)sourceClient.Blobs, "source", "custom:blob", 4, CancellationToken.None);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => content.EnsureSerializationCompletedAsync());
+        Assert.Throws<NotSupportedException>(() => content.ReadAsStream());
+        Assert.Throws<NotSupportedException>(() => content.CopyTo(Stream.Null, null, CancellationToken.None));
+    }
+
     [Fact]
     public async Task SendAsync_RedirectReplaysBlobFromBeginning()
     {
