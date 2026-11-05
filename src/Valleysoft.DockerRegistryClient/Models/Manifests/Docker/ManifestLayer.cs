@@ -30,5 +30,6 @@ public class ManifestLayer : IDescriptor
     /// This field is optional and uncommon.
     /// </summary>
     [JsonPropertyName("urls")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string[] Urls { get; set; } = Array.Empty<string>();
 }

@@ -7,13 +7,19 @@ namespace Valleysoft.DockerRegistryClient;
 /// </summary>
 public class BlobUploadContext
 {
-    internal BlobUploadContext(AuthenticationHeaderValue? authorization, Uri authorizationOrigin)
+    internal BlobUploadContext(
+        AuthenticationHeaderValue? authorization,
+        Uri authorizationOrigin,
+        OAuthDelegatingHandler.AuthenticationState? authenticationState = null)
     {
         Authorization = authorization;
         AuthorizationOrigin = authorizationOrigin;
+        AuthenticationState = authenticationState;
     }
 
-    internal AuthenticationHeaderValue? Authorization { get; }
+    internal AuthenticationHeaderValue? Authorization { get; set; }
 
     internal Uri AuthorizationOrigin { get; }
+
+    internal OAuthDelegatingHandler.AuthenticationState? AuthenticationState { get; }
 }

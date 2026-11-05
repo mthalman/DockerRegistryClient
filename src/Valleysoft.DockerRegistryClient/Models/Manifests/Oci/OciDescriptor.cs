@@ -25,23 +25,27 @@ public class OciDescriptor : IDescriptor
     /// Gets or sets fallback URLs from which the referenced content may be downloaded.
     /// </summary>
     [JsonPropertyName("urls")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string[] Urls { get; set; } = [];
 
     /// <summary>
     /// Gets or sets arbitrary metadata associated with the descriptor.
     /// </summary>
     [JsonPropertyName("annotations")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, string> Annotations { get; set; } = [];
 
     /// <summary>
     /// Gets or sets base64-encoded embedded content for the descriptor.
     /// </summary>
     [JsonPropertyName("data")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Data { get; set; }
 
     /// <summary>
     /// Gets or sets the media type of the artifact represented by the descriptor.
     /// </summary>
     [JsonPropertyName("artifactType")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ArtifactType { get; set; }
 }

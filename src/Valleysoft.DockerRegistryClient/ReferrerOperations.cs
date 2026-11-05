@@ -134,6 +134,10 @@ internal class ReferrerOperations : IReferrerOperations
                 repositoryName,
                 fallbackTag,
                 cancellationToken).ConfigureAwait(false);
+            if (!IsValidFallbackIndex(manifestInfo.MediaType, manifestInfo.Content))
+            {
+                return CreateEmptyPage();
+            }
         }
         catch (RegistryException ex) when (IsNotFound(ex))
         {
@@ -189,6 +193,38 @@ internal class ReferrerOperations : IReferrerOperations
             >= 'A' and <= 'Z' or
             >= '0' and <= '9' or
             '_' or '.' or '-';
+
+    internal static bool IsValidFallbackIndex(string responseMediaType, ReadOnlyMemory<byte> content)
+    {
+        using JsonDocument document = JsonDocument.Parse(content);
+        JsonElement root = document.RootElement;
+        return responseMediaType.Equals(ManifestMediaTypes.OciImageIndex1, StringComparison.OrdinalIgnoreCase) &&
+            root.ValueKind == JsonValueKind.Object &&
+            root.TryGetProperty("schemaVersion", out JsonElement schemaVersion) &&
+            schemaVersion.ValueKind == JsonValueKind.Number &&
+            schemaVersion.TryGetInt32(out int schemaVersionValue) &&
+            schemaVersionValue == 2 &&
+            (!root.TryGetProperty("mediaType", out JsonElement mediaType) ||
+                (mediaType.ValueKind == JsonValueKind.String &&
+                    mediaType.GetString() == ManifestMediaTypes.OciImageIndex1)) &&
+            root.TryGetProperty("manifests", out JsonElement manifests) &&
+            manifests.ValueKind == JsonValueKind.Array &&
+            manifests.EnumerateArray().All(IsValidDescriptor);
+    }
+
+    private static bool IsValidDescriptor(JsonElement descriptor) =>
+        descriptor.ValueKind == JsonValueKind.Object &&
+        descriptor.TryGetProperty("mediaType", out JsonElement mediaType) &&
+        mediaType.ValueKind == JsonValueKind.String &&
+        !string.IsNullOrWhiteSpace(mediaType.GetString()) &&
+        descriptor.TryGetProperty("digest", out JsonElement digest) &&
+        digest.ValueKind == JsonValueKind.String &&
+        digest.GetString() is string digestValue &&
+        RegistryReferenceValidator.IsValidDigest(digestValue) &&
+        descriptor.TryGetProperty("size", out JsonElement size) &&
+        size.ValueKind == JsonValueKind.Number &&
+        size.TryGetInt64(out long sizeValue) &&
+        sizeValue >= 0;
 
     private static bool IsNotFound(Exception exception)
     {

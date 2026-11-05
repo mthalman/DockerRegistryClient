@@ -25,6 +25,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Valleysoft.DockerRegistryClient\Valleysoft.DockerRegistryClient.csproj" />
   </ItemGroup>
 

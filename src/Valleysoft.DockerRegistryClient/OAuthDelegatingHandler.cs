@@ -7,6 +7,11 @@ namespace Valleysoft.DockerRegistryClient;
 
 internal class OAuthDelegatingHandler : DelegatingHandler
 {
+    internal sealed record AuthenticationState(Uri Origin, AuthenticationHeaderValue? Authorization);
+
+    internal static readonly HttpRequestOptionsKey<AuthenticationState> AuthenticationStateKey =
+        new("DockerRegistryClient.OAuthAuthenticationState");
+
     private readonly Uri? registryUri;
 
     public OAuthDelegatingHandler()
@@ -31,9 +36,16 @@ internal class OAuthDelegatingHandler : DelegatingHandler
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
-        AuthenticationHeaderValue? authorization = request.Headers.Authorization;
         Uri requestRegistryUri = registryUri ?? request.RequestUri ??
             throw new InvalidOperationException("The request URI must be set before authentication.");
+        if (!request.Options.TryGetValue(AuthenticationStateKey, out AuthenticationState? authenticationState) ||
+            !RegistryUriBuilder.HasSameOrigin(authenticationState.Origin, request.RequestUri!))
+        {
+            authenticationState = new AuthenticationState(request.RequestUri!, request.Headers.Authorization);
+            request.Options.Set(AuthenticationStateKey, authenticationState);
+        }
+
+        AuthenticationHeaderValue? authorization = authenticationState.Authorization;
 
         HttpResponseMessage response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
@@ -95,9 +107,15 @@ internal class OAuthDelegatingHandler : DelegatingHandler
             challenge,
             authorization,
             cancellationToken).ConfigureAwait(false);
+        string? accessToken = authToken.AccessToken ?? authToken.Token;
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            throw new AuthenticationException("The OAuth token response does not contain a nonempty access token.");
+        }
+
         request.Headers.Authorization = new AuthenticationHeaderValue(
             HttpBearerChallenge.Bearer,
-            authToken.AccessToken ?? authToken.Token);
+            accessToken);
         return request;
     }
 
@@ -139,6 +157,12 @@ internal class OAuthDelegatingHandler : DelegatingHandler
             cancellationToken.ThrowIfCancellationRequested();
             using HttpResponseMessage authenticateResponse =
                 await base.SendAsync(authenticateRequest, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (authenticateResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                throw new OAuthTokenRequestException(authenticateResponse.StatusCode);
+            }
+
             authenticateResponse.EnsureSuccessStatusCode();
 
             cancellationToken.ThrowIfCancellationRequested();
