@@ -14,6 +14,7 @@ internal sealed class ReplayableBlobContent : StreamContent, IReplayableHttpCont
     private readonly long size;
     private readonly CancellationToken copyCancellationToken;
     private Task? serializationTask;
+    private byte[]? bufferedContent;
 
     public ReplayableBlobContent(
         BlobOperations source,
@@ -37,12 +38,19 @@ internal sealed class ReplayableBlobContent : StreamContent, IReplayableHttpCont
         return true;
     }
 
-    // The base stream only selects the transport contract; each serialization opens its own source.
+    // The base stream only selects the transport contract; unbuffered copies open their own source.
     protected override void SerializeToStream(
         Stream stream,
         TransportContext? context,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException("Blob copy content requires asynchronous serialization.");
+        CancellationToken cancellationToken)
+    {
+        if (bufferedContent is null)
+        {
+            throw new NotSupportedException("Blob copy content requires asynchronous serialization.");
+        }
+
+        stream.Write(bufferedContent, 0, bufferedContent.Length);
+    }
 
     protected override Stream CreateContentReadStream(CancellationToken cancellationToken) =>
         throw new NotSupportedException("Blob copy content requires asynchronous serialization.");
@@ -59,7 +67,8 @@ internal sealed class ReplayableBlobContent : StreamContent, IReplayableHttpCont
 
         using var buffer = new MemoryStream((int)size);
         await CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
-        return new MemoryStream(buffer.GetBuffer(), 0, (int)buffer.Length, writable: false);
+        bufferedContent = buffer.GetBuffer();
+        return new MemoryStream(bufferedContent, 0, (int)buffer.Length, writable: false);
     }
 
     protected override Task SerializeToStreamAsync(
@@ -99,6 +108,16 @@ internal sealed class ReplayableBlobContent : StreamContent, IReplayableHttpCont
         Stream stream,
         CancellationToken cancellationToken)
     {
+        if (bufferedContent is not null)
+        {
+            await stream.WriteAsync(
+                bufferedContent,
+                0,
+                bufferedContent.Length,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         using Stream sourceStream = await source.GetForCopyAsync(
             repositoryName,
             digest,

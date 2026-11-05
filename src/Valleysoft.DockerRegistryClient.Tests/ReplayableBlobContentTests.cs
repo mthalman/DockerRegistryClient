@@ -5,6 +5,81 @@ namespace Valleysoft.DockerRegistryClient.Tests;
 
 public class ReplayableBlobContentTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ReadAsStreamAsync_FollowedBySerialization_ReusesBufferedBytes(
+        bool synchronous,
+        bool disposeInspectionStream)
+    {
+        var sourceHandler = new MockHttpMessageHandler();
+        using var sourceStream = new MemoryStream([1, 2, 3, 4]);
+        sourceHandler.AddExpectedRequest(
+            HttpMethod.Get,
+            "https://source.example/v2/source/blobs/custom:blob",
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(sourceStream) });
+        using var sourceClient = new RegistryClient("source.example", null, sourceHandler);
+        using var content = new ReplayableBlobContent(
+            (BlobOperations)sourceClient.Blobs, "source", "custom:blob", 4, CancellationToken.None);
+        using Stream inspectionStream = await content.ReadAsStreamAsync();
+        Assert.Equal(1, inspectionStream.ReadByte());
+        if (disposeInspectionStream)
+        {
+            inspectionStream.Dispose();
+        }
+
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            using var destination = new MemoryStream();
+            if (synchronous)
+            {
+                content.CopyTo(destination, null, CancellationToken.None);
+            }
+            else
+            {
+                await content.CopyToAsync(destination);
+            }
+
+            await content.EnsureSerializationCompletedAsync();
+            Assert.Equal([1, 2, 3, 4], destination.ToArray());
+            content.PrepareForReplay();
+        }
+
+        Assert.Equal(1, sourceHandler.RequestCount);
+        Assert.False(sourceStream.CanRead);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CopyToAsync_BufferedContent_TracksCanceledSerialization(bool cancelCaller)
+    {
+        var sourceHandler = new MockHttpMessageHandler();
+        using var sourceStream = new MemoryStream([1, 2, 3, 4]);
+        sourceHandler.AddExpectedRequest(
+            HttpMethod.Get,
+            "https://source.example/v2/source/blobs/custom:blob",
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(sourceStream) });
+        using var sourceClient = new RegistryClient("source.example", null, sourceHandler);
+        using var callerCancellation = new CancellationTokenSource();
+        using var transportCancellation = new CancellationTokenSource();
+        using var content = new ReplayableBlobContent(
+            (BlobOperations)sourceClient.Blobs, "source", "custom:blob", 4, callerCancellation.Token);
+        using Stream inspectionStream = await content.ReadAsStreamAsync();
+        using var destination = new MemoryStream();
+        (cancelCaller ? callerCancellation : transportCancellation).Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => content.CopyToAsync(destination, transportCancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => content.EnsureSerializationCompletedAsync());
+
+        Assert.Empty(destination.ToArray());
+        Assert.Equal(1, sourceHandler.RequestCount);
+    }
+
     [Fact]
     public async Task ReadAsStreamAsync_AllocatesOnlyOneBlobSizedBuffer()
     {
