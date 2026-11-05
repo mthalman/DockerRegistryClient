@@ -359,9 +359,10 @@ internal class BlobOperations : IBlobOperations
         HttpRequestMessage request)
     {
         HttpRequestMessage effectiveRequest = response.RequestMessage ?? request;
-        if (RegistryUriBuilder.HasSameOrigin(context.AuthorizationOrigin, effectiveRequest.RequestUri!))
+        if (effectiveRequest.Headers.Authorization is { } authorization &&
+            RegistryUriBuilder.HasSameOrigin(context.AuthorizationOrigin, effectiveRequest.RequestUri!))
         {
-            context.Authorization = effectiveRequest.Headers.Authorization;
+            context.Authorization = authorization;
         }
     }
 

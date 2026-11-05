@@ -111,10 +111,12 @@ public class OAuthUploadRecoveryTests
     }
 
     /// <summary>
-    /// Keeps registry authorization cached when a successful redirected chunk finishes anonymously at external storage.
+    /// Keeps valid registry authorization cached when a redirected chunk succeeds anonymously, regardless of the redirect's origin.
     /// </summary>
-    [Fact]
-    public async Task Upload_ExternalRedirect_DoesNotReplaceCachedRegistryAuthorization()
+    [Theory]
+    [InlineData("https://storage.example/upload")]
+    [InlineData("https://registry.example/anonymous-upload")]
+    public async Task Upload_AnonymousRedirect_DoesNotReplaceCachedRegistryAuthorization(string redirectLocation)
     {
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(_ => true, Challenge());
@@ -127,13 +129,13 @@ public class OAuthUploadRecoveryTests
             return true;
         }, new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)
         {
-            Headers = { Location = new Uri("https://storage.example/upload") }
+            Headers = { Location = new Uri(redirectLocation) }
         });
         HttpResponseMessage externalResponse = UploadResponse();
         externalResponse.Headers.Location = new Uri($"{Registry}{UploadLocation}");
         handler.AddExpectedRequest(request =>
         {
-            Assert.Equal("storage.example", request.RequestUri!.Host);
+            Assert.Equal(new Uri(redirectLocation), request.RequestUri);
             Assert.Null(request.Headers.Authorization);
             Assert.Equal(Blob, Serialize(request.Content!));
             return true;
