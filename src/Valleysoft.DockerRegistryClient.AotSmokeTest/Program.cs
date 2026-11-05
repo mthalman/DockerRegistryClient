@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
 using Valleysoft.DockerRegistryClient;
@@ -18,7 +19,7 @@ Page<Valleysoft.DockerRegistryClient.Models.RepositoryTags> tags = await client.
 AssertEqual("latest", tags.Value.Tags.Single(), "repository tag");
 
 ManifestInfo manifestInfo = await client.Manifests.GetAsync(Constants.Repository, "latest");
-AssertEqual(Constants.ManifestDigest, manifestInfo.DockerContentDigest, "manifest digest");
+AssertEqual(SmokeRegistryHandler.ManifestDigest, manifestInfo.DockerContentDigest, "manifest digest");
 if (manifestInfo.Manifest is not OciImageManifest { Subject.Digest: Constants.SubjectDigest })
 {
     throw new InvalidOperationException("Expected an OCI image manifest with the configured subject.");
@@ -26,7 +27,7 @@ if (manifestInfo.Manifest is not OciImageManifest { Subject.Digest: Constants.Su
 
 Page<OciImageIndex> referrers = await client.Referrers.GetAsync(Constants.Repository, Constants.SubjectDigest, Constants.ArtifactType);
 Valleysoft.DockerRegistryClient.Models.Manifests.Oci.ManifestReference referrer = referrers.Value.Manifests.Single();
-AssertEqual(Constants.ManifestDigest, referrer.Digest, "fallback referrer digest");
+AssertEqual(SmokeRegistryHandler.ManifestDigest, referrer.Digest, "fallback referrer digest");
 AssertEqual(Constants.ArtifactType, referrer.ArtifactType, "fallback referrer artifact type");
 
 var publishedManifest = new OciImageManifest
@@ -92,6 +93,8 @@ static void AssertEqualCount(int expected, int actual, string name)
 
 sealed class SmokeRegistryHandler : HttpMessageHandler
 {
+    public static readonly string ManifestDigest = GetDigest(JsonManifest());
+
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
         Task.FromResult(Handle(request));
 
@@ -102,9 +105,9 @@ sealed class SmokeRegistryHandler : HttpMessageHandler
         {
             ("GET", "/v2/_catalog") => Json(HttpStatusCode.OK, "{\"repositories\":[\"library/alpine\"]}"),
             ("GET", "/v2/library/alpine/tags/list") => Json(HttpStatusCode.OK, "{\"name\":\"library/alpine\",\"tags\":[\"latest\"]}"),
-            ("GET", "/v2/library/alpine/manifests/latest") => Manifest(JsonManifest(), Constants.ManifestDigest),
+            ("GET", "/v2/library/alpine/manifests/latest") => Manifest(JsonManifest()),
             ("GET", "/v2/library/alpine/referrers/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?artifactType=application%2Fvnd.example.artifact") => Error(HttpStatusCode.NotFound),
-            ("GET", "/v2/library/alpine/manifests/sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") => Manifest(JsonReferrersIndex(), "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", ManifestMediaTypes.OciImageIndex1),
+            ("GET", "/v2/library/alpine/manifests/sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") => Manifest(JsonReferrersIndex(), ManifestMediaTypes.OciImageIndex1),
             ("PUT", "/v2/library/alpine/manifests/artifact") => CreatedManifest(request, verifyReferrersFallback: false),
             ("GET", "/v2/library/alpine/referrers/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") => Error(HttpStatusCode.NotFound),
             ("PUT", "/v2/library/alpine/manifests/sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") => CreatedManifest(request, verifyReferrersFallback: true),
@@ -143,10 +146,13 @@ sealed class SmokeRegistryHandler : HttpMessageHandler
         return response;
     }
 
-    private static HttpResponseMessage Manifest(string json, string digest, string mediaType = ManifestMediaTypes.OciManifestSchema1)
+    private static string GetDigest(string json) =>
+        $"sha256:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).ToLowerInvariant()}";
+
+    private static HttpResponseMessage Manifest(string json, string mediaType = ManifestMediaTypes.OciManifestSchema1)
     {
         HttpResponseMessage response = Json(HttpStatusCode.OK, json, mediaType);
-        response.Headers.Add("Docker-Content-Digest", digest);
+        response.Headers.Add("Docker-Content-Digest", GetDigest(json));
         return response;
     }
 
@@ -190,15 +196,15 @@ sealed class SmokeRegistryHandler : HttpMessageHandler
         """;
 
     private static string JsonReferrersIndex() =>
-        """
+        $$"""
         {
           "schemaVersion": 2,
           "mediaType": "application/vnd.oci.image.index.v1+json",
           "manifests": [
             {
               "mediaType": "application/vnd.oci.image.manifest.v1+json",
-              "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-              "size": 123,
+              "digest": "{{ManifestDigest}}",
+              "size": {{Encoding.UTF8.GetByteCount(JsonManifest())}},
               "artifactType": "application/vnd.example.artifact"
             }
           ]
@@ -314,7 +320,6 @@ static class Constants
     public const string Registry = "registry.example";
     public const string Repository = "library/alpine";
     public const string SubjectDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    public const string ManifestDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     public const string ArtifactType = "application/vnd.example.artifact";
 }
 
