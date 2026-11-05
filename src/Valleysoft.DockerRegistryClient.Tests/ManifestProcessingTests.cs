@@ -30,6 +30,7 @@ public partial class ManifestOperationsTests
                 probeContent.IsDisposed && !probeContent.IsSerialized,
             new HttpResponseMessage(HttpStatusCode.Accepted));
         using var client = CreateClient(handler);
+        client.HttpClient.MaxResponseContentBufferSize = 1024;
 
         await client.Manifests.DeleteAsync("repo", ManifestDigest);
 
@@ -103,6 +104,40 @@ public partial class ManifestOperationsTests
         Assert.Equal("DENIED", Assert.Single(exception.Errors).Code);
         Assert.Equal(2, handler.RequestCount);
         await Assert.ThrowsAsync<ObjectDisposedException>(() => errorContent.ReadAsStringAsync());
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Forbidden, true, 1024)]
+    [InlineData(HttpStatusCode.Forbidden, false, 1024)]
+    [InlineData(HttpStatusCode.Forbidden, true, 1025)]
+    [InlineData(HttpStatusCode.Forbidden, false, 1025)]
+    [InlineData(HttpStatusCode.NotFound, true, 1025)]
+    [InlineData(HttpStatusCode.NotFound, false, 1025)]
+    public async Task DeleteAsync_ProbeErrorBody_RespectsConfiguredBufferLimit(
+        HttpStatusCode status, bool knownLength, int size)
+    {
+        byte[] body = Encoding.UTF8.GetBytes(
+            """{"errors":[{"code":"DENIED","message":"access denied"}]}""".PadRight(size));
+        var content = new SizedProbeErrorContent(body, knownLength);
+        var handler = CreateStalledProbeHandler(content, status);
+        using var httpClient = new HttpClient(handler) { MaxResponseContentBufferSize = 1024 };
+        using var client = new RegistryClient("registry.example", null, httpClient);
+
+        if (size > httpClient.MaxResponseContentBufferSize)
+        {
+            await Assert.ThrowsAsync<HttpRequestException>(
+                () => client.Manifests.DeleteAsync("repo", ManifestDigest));
+        }
+        else
+        {
+            RegistryException exception = await Assert.ThrowsAsync<RegistryException>(
+                () => client.Manifests.DeleteAsync("repo", ManifestDigest));
+            Assert.Equal(status, exception.StatusCode);
+            Assert.Equal("DENIED", Assert.Single(exception.Errors).Code);
+        }
+
+        Assert.True(content.IsDisposed);
+        Assert.Equal(2, handler.RequestCount);
     }
 
     [Fact]
@@ -410,7 +445,8 @@ public partial class ManifestOperationsTests
         Assert.Equal(1, destinationHandler.RequestCount);
     }
 
-    private static MockHttpMessageHandler CreateStalledProbeHandler(HttpContent content)
+    private static MockHttpMessageHandler CreateStalledProbeHandler(
+        HttpContent content, HttpStatusCode status = HttpStatusCode.Forbidden)
     {
         var handler = new MockHttpMessageHandler();
         handler.AddExpectedRequest(
@@ -420,8 +456,28 @@ public partial class ManifestOperationsTests
         handler.AddExpectedRequest(
             HttpMethod.Get,
             $"https://registry.example/v2/repo/referrers/{SubjectDigest}",
-            new HttpResponseMessage(HttpStatusCode.Forbidden) { Content = content });
+            new HttpResponseMessage(status) { Content = content });
         return handler;
+    }
+
+    private sealed class SizedProbeErrorContent(byte[] body, bool knownLength) : HttpContent
+    {
+        public bool IsDisposed { get; private set; }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            stream.WriteAsync(body).AsTask();
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = body.Length;
+            return knownLength;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = true;
+            base.Dispose(disposing);
+        }
     }
 
     private sealed class GatedProbeCredentials : IRegistryClientCredentials

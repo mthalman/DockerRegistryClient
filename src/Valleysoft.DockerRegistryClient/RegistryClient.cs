@@ -219,11 +219,23 @@ public class RegistryClient : IDisposable
                 string errorContent = string.Empty;
                 if (response.Content is not null)
                 {
+                    if (skipSuccessfulResponseBody)
+                    {
+                        using var bufferedContent = new CancellationAwareContent(
+                            response.Content, requestCancellationToken);
+                        await bufferedContent.LoadIntoBufferAsync(
+                            this.HttpClient.MaxResponseContentBufferSize).ConfigureAwait(false);
+                        errorContent = await bufferedContent.ReadAsStringAsync(
+                            requestCancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
 #if NET5_0_OR_GREATER
-                    errorContent = await response.Content.ReadAsStringAsync(requestCancellationToken).ConfigureAwait(false);
+                        errorContent = await response.Content.ReadAsStringAsync(requestCancellationToken).ConfigureAwait(false);
 #else
-                    errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 #endif
+                    }
                 }
 
                 ErrorResult? errorResult = ParseErrorResult(response, errorContent);
@@ -244,6 +256,32 @@ public class RegistryClient : IDisposable
         response.EnsureSuccessStatusCode();
 
         return response;
+    }
+
+    private sealed class CancellationAwareContent : HttpContent
+    {
+        private readonly HttpContent content;
+        private readonly CancellationToken cancellationToken;
+
+        public CancellationAwareContent(HttpContent content, CancellationToken cancellationToken)
+        {
+            this.content = content;
+            this.cancellationToken = cancellationToken;
+            foreach (var header in content.Headers)
+            {
+                Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+        }
+
+        // net8.0's bounded LoadIntoBufferAsync overload cannot accept a cancellation token.
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            content.CopyToAsync(stream, context, cancellationToken);
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = content.Headers.ContentLength ?? 0;
+            return content.Headers.ContentLength.HasValue;
+        }
     }
 
     private static ErrorResult? ParseErrorResult(HttpResponseMessage response, string errorContent)
