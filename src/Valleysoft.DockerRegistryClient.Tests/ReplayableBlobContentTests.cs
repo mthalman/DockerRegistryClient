@@ -5,6 +5,76 @@ namespace Valleysoft.DockerRegistryClient.Tests;
 
 public class ReplayableBlobContentTests
 {
+    [Fact]
+    public async Task ReadAsStreamAsync_AllocatesOnlyOneBlobSizedBuffer()
+    {
+        const int size = 4 * 1024 * 1024;
+        var sourceHandler = new MockHttpMessageHandler();
+        using var sourceStream = new MemoryStream(new byte[size]);
+        sourceHandler.AddExpectedRequest(
+            HttpMethod.Get,
+            "https://source.example/v2/source/blobs/custom:blob",
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(sourceStream) });
+        using var sourceClient = new RegistryClient("source.example", null, sourceHandler);
+        using var content = new ReplayableBlobContent(
+            (BlobOperations)sourceClient.Blobs, "source", "custom:blob", size, CancellationToken.None);
+        long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+
+        Task<Stream> readTask = content.ReadAsStreamAsync();
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
+
+        Assert.True(readTask.IsCompletedSuccessfully);
+        using Stream result = await readTask;
+        Assert.Equal(size, result.Length);
+        Assert.False(result.CanWrite);
+        Assert.InRange(allocated, size, size + 512 * 1024);
+    }
+
+    [Fact]
+    public async Task ReadAsStreamAsync_BlobExceedsBufferLimit_RejectsBeforeDownloading()
+    {
+        var sourceHandler = new MockHttpMessageHandler();
+        using var sourceClient = new RegistryClient("source.example", null, sourceHandler);
+        using var content = new ReplayableBlobContent(
+            (BlobOperations)sourceClient.Blobs, "source", "custom:blob",
+            (long)int.MaxValue + 1, CancellationToken.None);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => content.ReadAsStreamAsync());
+
+        Assert.Equal(0, sourceHandler.RequestCount);
+    }
+
+    [Fact]
+    public async Task ReadAsStreamAsync_CanceledSerialization_DisposesSource()
+    {
+        using var sourceStream = new BlockingReadStream([1, 2, 3, 4]);
+        var sourceHandler = new MockHttpMessageHandler();
+        sourceHandler.AddExpectedRequest(
+            HttpMethod.Get,
+            "https://source.example/v2/source/blobs/custom:blob",
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(sourceStream) });
+        using var sourceClient = new RegistryClient("source.example", null, sourceHandler);
+        using var content = new ReplayableBlobContent(
+            (BlobOperations)sourceClient.Blobs, "source", "custom:blob", 4, CancellationToken.None);
+        using var cancellationSource = new CancellationTokenSource();
+
+        Task<Stream> readTask = content.ReadAsStreamAsync(cancellationSource.Token);
+        await sourceStream.ReadStarted.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellationSource.Cancel();
+
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => readTask.WaitAsync(TimeSpan.FromSeconds(5)));
+        }
+        finally
+        {
+            sourceStream.Release();
+        }
+
+        Assert.False(sourceStream.CanRead);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

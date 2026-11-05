@@ -50,10 +50,17 @@ internal sealed class ReplayableBlobContent : StreamContent, IReplayableHttpCont
     protected override Task<Stream> CreateContentReadStreamAsync() =>
         CreateContentReadStreamAsync(CancellationToken.None);
 
-    protected override async Task<Stream> CreateContentReadStreamAsync(CancellationToken cancellationToken) =>
-        new MemoryStream(
-            await ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false),
-            writable: false);
+    protected override async Task<Stream> CreateContentReadStreamAsync(CancellationToken cancellationToken)
+    {
+        if (size > int.MaxValue)
+        {
+            throw new HttpRequestException("The blob is too large to buffer in memory.");
+        }
+
+        using var buffer = new MemoryStream((int)size);
+        await CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+        return new MemoryStream(buffer.GetBuffer(), 0, (int)buffer.Length, writable: false);
+    }
 
     protected override Task SerializeToStreamAsync(
         Stream stream,
