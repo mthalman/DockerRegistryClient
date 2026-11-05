@@ -58,9 +58,6 @@ Pass a second argument when the token uses a different authentication scheme:
 TokenCredentials credentials = new("mytoken", "CustomScheme");
 ```
 
-If the registry responds with a bearer challenge, the built-in OAuth handler
-submits the supplied `Bearer` token to the token service as a refresh token.
-
 ## Provide custom credentials
 
 Implement `IRegistryClientCredentials` to control how each request sets its
