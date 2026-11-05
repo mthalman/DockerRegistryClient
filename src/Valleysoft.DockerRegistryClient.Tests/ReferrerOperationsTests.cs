@@ -319,6 +319,9 @@ public sealed class ReferrerOperationsTests
         Assert.Null(page.NextPageLink);
     }
 
+    /// <summary>
+    /// Verifies malformed fallback indexes return an empty page regardless of whether artifact filtering is requested.
+    /// </summary>
     [Theory]
     [InlineData("""{}""")]
     [InlineData("not-json")]
@@ -362,6 +365,9 @@ public sealed class ReferrerOperationsTests
         Assert.Null(page.NextPageLink);
     }
 
+    /// <summary>
+    /// Verifies fallback discovery accepts an omitted JSON mediaType and filters validated descriptors when requested.
+    /// </summary>
     [Theory]
     [InlineData(null)]
     [InlineData("application/spdx+json")]

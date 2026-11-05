@@ -62,8 +62,18 @@ internal class ManifestOperations : IManifestWriteOperations
             {
                 using HttpResponseMessage response = await this.Client.SendRequestCoreAsync(
                     request, cancellationToken: cancellationToken).ConfigureAwait(false);
-                return GetOptionalDigest(response) ??
-                    (await GetAsync(repositoryName, tagOrDigest, cancellationToken).ConfigureAwait(false)).DockerContentDigest;
+                string? responseDigest = GetOptionalDigest(response);
+                if (responseDigest is not null)
+                {
+                    return responseDigest;
+                }
+
+                if (RegistryReferenceValidator.IsValidDigest(tagOrDigest))
+                {
+                    return tagOrDigest;
+                }
+
+                return (await GetAsync(repositoryName, tagOrDigest, cancellationToken).ConfigureAwait(false)).DockerContentDigest;
             }).ConfigureAwait(false);
     }
 
@@ -451,10 +461,16 @@ internal class ManifestOperations : IManifestWriteOperations
         return $"sha256:{encoded}";
     }
 
-    internal static bool VerifyDigestIfSupported(string digest, ReadOnlyMemory<byte> content) =>
-        VerifyDigestIfSupported(digest, content.ToArray());
+    internal static HashAlgorithmName GetSupportedDigestAlgorithm(string digest) =>
+        digest.Substring(0, digest.IndexOf(':')) switch
+        {
+            "sha256" => HashAlgorithmName.SHA256,
+            "sha384" => HashAlgorithmName.SHA384,
+            "sha512" => HashAlgorithmName.SHA512,
+            _ => default
+        };
 
-    private static bool VerifyDigestIfSupported(string digest, byte[] content)
+    internal static bool VerifyDigestIfSupported(string digest, ReadOnlyMemory<byte> content)
     {
         if (!RegistryReferenceValidator.IsValidDigest(digest))
         {
@@ -463,21 +479,15 @@ internal class ManifestOperations : IManifestWriteOperations
 
         int separatorIndex = digest.IndexOf(':');
         string algorithm = digest.Substring(0, separatorIndex);
-        using HashAlgorithm? hashAlgorithm = algorithm switch
-        {
-            "sha256" => SHA256.Create(),
-            "sha384" => SHA384.Create(),
-            "sha512" => SHA512.Create(),
-            _ => null
-        };
-        if (hashAlgorithm is null)
+        HashAlgorithmName hashAlgorithm = GetSupportedDigestAlgorithm(digest);
+        if (hashAlgorithm.Name is null)
         {
             return false;
         }
 
-        string actual = BitConverter.ToString(hashAlgorithm.ComputeHash(content))
-            .Replace("-", string.Empty)
-            .ToLowerInvariant();
+        using IncrementalHash hash = IncrementalHash.CreateHash(hashAlgorithm);
+        hash.AppendData(content.Span);
+        string actual = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
         string expected = digest.Substring(separatorIndex + 1);
         if (!actual.Equals(expected, StringComparison.Ordinal))
         {
@@ -500,7 +510,7 @@ internal class ManifestOperations : IManifestWriteOperations
         if (responseDigest is not null)
         {
             VerifyDigestIfSupported(responseDigest, content);
-            if (RegistryReferenceValidator.IsValidDigest(tagOrDigest))
+            if (tagOrDigest != responseDigest && RegistryReferenceValidator.IsValidDigest(tagOrDigest))
             {
                 VerifyDigestIfSupported(tagOrDigest, content);
             }

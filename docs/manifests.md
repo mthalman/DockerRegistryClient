@@ -48,10 +48,6 @@ the registry's `Location` response header. `Digest` contains the
 `Docker-Content-Digest` response header when the registry provides it; otherwise,
 it is `null`.
 
-Built-in models omit null optional OCI manifest, descriptor, and platform fields
-when serializing. Required fields, including zero-valued descriptor sizes,
-remain in the output.
-
 Use the byte-oriented overload when copying a retrieved manifest or when its
 exact representation matters:
 
@@ -96,12 +92,6 @@ referrers support with an `OCI-Subject` response header. Deleting a
 subject-bearing manifest also removes it from that fallback index when the
 native referrers API is unavailable.
 
-Fallback updates use strong ETags for conditional writes when the registry
-provides them. Weak or absent ETags cannot protect against updates from other
-clients; in that case, updates are serialized only within this client instance.
-An existing malformed fallback index causes maintenance to fail rather than
-overwriting its contents.
-
 The built-in manifest operations implement `IManifestWriteOperations`. Custom
 `IManifestOperations` implementations must also implement that capability
 interface to support the publishing and deletion extension methods.
@@ -142,9 +132,7 @@ throw `RegistryException`; see [Error Handling](error-handling.md).
 
 ## Get a digest
 
-Retrieve the digest for a tag or digest reference using a HEAD request. If the
-registry omits `Docker-Content-Digest`, the client downloads the manifest to
-resolve its digest:
+Retrieve the digest for a tag or digest reference without downloading the full manifest:
 
 ```csharp
 string digest = await client.Manifests.GetDigestAsync("dotnet/sdk", "latest");
@@ -212,10 +200,6 @@ if (info.MediaType == ManifestMediaTypes.DockerManifestList)
 }
 ```
 
-`ManifestInfo.MediaType` comes from the registry's HTTP response headers.
-`DockerContentDigest` uses the response digest when present, otherwise the
-requested digest reference, or a SHA-256 digest calculated from the original
-response bytes for tag requests. Supported SHA-256, SHA-384, and SHA-512 digests
-are verified against those bytes; a mismatch throws `InvalidOperationException`.
-`RawManifest.MediaType` uses that same response media type;
+`ManifestInfo.MediaType` and `DockerContentDigest` come from the registry's HTTP
+response headers. `RawManifest.MediaType` uses that same response media type;
 the JSON document does not need to contain its own `mediaType` field.

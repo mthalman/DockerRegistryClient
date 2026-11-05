@@ -7,11 +7,6 @@ discovers artifacts that reference a given manifest digest, such as SBOMs,
 signatures, and attestations. If a registry does not implement the referrers
 endpoint, the client automatically queries the OCI referrers tag fallback.
 
-Fallback indexes may omit the JSON `mediaType` when the response Content-Type
-identifies an OCI image index. Missing or malformed fallback indexes return an
-empty terminal page, including indexes containing invalid descriptors. Other
-HTTP errors and digest verification failures propagate to the caller.
-
 ## Get referrers
 
 ```csharp

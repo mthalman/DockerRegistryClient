@@ -453,6 +453,9 @@ public class RegistryClientExtensionsTests
         Assert.Equal(0, destinationHandler.RemainingRequestCount);
     }
 
+    /// <summary>
+    /// Verifies recursive copy rejects a child whose size or media type differs from its descriptor before publishing it.
+    /// </summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -647,6 +650,9 @@ public class RegistryClientExtensionsTests
         Assert.Equal(0, destinationHandler.RemainingRequestCount);
     }
 
+    /// <summary>
+    /// Verifies recursive copy identifies root and child manifests with or without response digest headers and copies a shared dependency once.
+    /// </summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

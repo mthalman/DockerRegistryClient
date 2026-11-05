@@ -11,6 +11,75 @@ namespace Valleysoft.DockerRegistryClient.Tests;
 
 public partial class ManifestOperationsTests
 {
+    /// <summary>
+    /// Verifies response and request identities remain checked when digest verification is shared with recursive copy.
+    /// </summary>
+    [Theory]
+    [InlineData("sha256", false)]
+    [InlineData("sha256", true)]
+    [InlineData("sha384", false)]
+    [InlineData("sha384", true)]
+    [InlineData("sha512", false)]
+    [InlineData("sha512", true)]
+    public async Task GetAsync_ResponseDigest_VerifiesRequestedDigest(string algorithm, bool mismatchReference)
+    {
+        byte[] content = Encoding.UTF8.GetBytes("""{"schemaVersion":2,"manifests":[]}""");
+        byte[] referenceContent = mismatchReference ? Encoding.UTF8.GetBytes("{}") : content;
+        byte[] hash = algorithm switch
+        {
+            "sha384" => SHA384.HashData(referenceContent),
+            "sha512" => SHA512.HashData(referenceContent),
+            _ => SHA256.HashData(referenceContent)
+        };
+        string reference = $"{algorithm}:{Convert.ToHexString(hash).ToLowerInvariant()}";
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(HttpMethod.Get,
+            $"https://registry.example/v2/repo/manifests/{reference}",
+            ManifestResponse(ManifestMediaTypes.OciImageIndex1, content));
+        using var client = CreateClient(handler);
+
+        if (mismatchReference)
+        {
+            InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => client.Manifests.GetAsync("repo", reference));
+            Assert.Contains(reference, exception.Message);
+        }
+        else
+        {
+            ManifestInfo result = await client.Manifests.GetAsync("repo", reference);
+            Assert.Equal(RegistryFixture.GetDigest(content), result.DockerContentDigest);
+            Assert.Equal(content, result.Content.ToArray());
+        }
+
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    /// <summary>
+    /// Verifies digest checks hash only the supplied memory slice and preserve unsupported-algorithm behavior.
+    /// </summary>
+    [Theory]
+    [InlineData("sha256")]
+    [InlineData("sha384")]
+    [InlineData("sha512")]
+    [InlineData("custom")]
+    public void VerifyDigestIfSupported_UsesMemorySlice(string algorithm)
+    {
+        byte[] bytes = Encoding.UTF8.GetBytes("prefix{}suffix");
+        ReadOnlyMemory<byte> content = bytes.AsMemory(6, 2);
+        byte[] hash = algorithm switch
+        {
+            "sha384" => SHA384.HashData(content.Span),
+            "sha512" => SHA512.HashData(content.Span),
+            _ => SHA256.HashData(content.Span)
+        };
+        string digest = $"{algorithm}:{Convert.ToHexString(hash).ToLowerInvariant()}";
+
+        Assert.Equal(algorithm != "custom", ManifestOperations.VerifyDigestIfSupported(digest, content));
+    }
+
+    /// <summary>
+    /// Verifies manifest identity is resolved from the response bytes or digest reference when the registry omits its digest header.
+    /// </summary>
     [Theory]
     [InlineData("latest")]
     [InlineData("sha256")]
@@ -50,6 +119,9 @@ public partial class ManifestOperationsTests
         Assert.Equal(content, result.Content.ToArray());
     }
 
+    /// <summary>
+    /// Verifies supported response and request digests are rejected when they do not match the manifest bytes.
+    /// </summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -75,6 +147,9 @@ public partial class ManifestOperationsTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.Manifests.GetAsync("repo", reference));
     }
 
+    /// <summary>
+    /// Verifies tag-based digest lookup downloads the manifest when the HEAD response omits its digest header.
+    /// </summary>
     [Fact]
     public async Task GetDigestAsync_WithoutHeadDigest_DownloadsManifest()
     {
@@ -93,6 +168,62 @@ public partial class ManifestOperationsTests
         Assert.Equal(0, handler.RemainingRequestCount);
     }
 
+    /// <summary>
+    /// Verifies digest-pinned lookups use HEAD metadata or the requested digest without downloading the manifest.
+    /// </summary>
+    [Theory]
+    [InlineData("sha256", 64, false)]
+    [InlineData("sha256", 64, true)]
+    [InlineData("sha384", 96, false)]
+    [InlineData("sha384", 96, true)]
+    [InlineData("sha512", 128, false)]
+    [InlineData("sha512", 128, true)]
+    [InlineData("custom", 3, false)]
+    [InlineData("custom", 3, true)]
+    public async Task GetDigestAsync_DigestReference_DoesNotDownloadManifest(
+        string algorithm, int encodedLength, bool includeResponseDigest)
+    {
+        string reference = $"{algorithm}:{new string('a', encodedLength)}";
+        var response = new HttpResponseMessage(HttpStatusCode.OK);
+        if (includeResponseDigest)
+        {
+            response.Headers.Add("Docker-Content-Digest", ManifestDigest);
+        }
+
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(HttpMethod.Head,
+            $"https://registry.example/v2/repo/manifests/{reference}", response);
+        using var client = CreateClient(handler);
+
+        string digest = await client.Manifests.GetDigestAsync("repo", reference);
+
+        Assert.Equal(includeResponseDigest ? ManifestDigest : reference, digest);
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    /// <summary>
+    /// Verifies a supplied digest does not bypass HTTP errors from the existence check.
+    /// </summary>
+    [Theory]
+    [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    public async Task GetDigestAsync_DigestReference_HeadFailureThrows(HttpStatusCode statusCode)
+    {
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(HttpMethod.Head,
+            $"https://registry.example/v2/repo/manifests/{ManifestDigest}",
+            new HttpResponseMessage(statusCode));
+        using var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<RegistryException>(
+            () => client.Manifests.GetDigestAsync("repo", ManifestDigest));
+
+        Assert.Equal(0, handler.RemainingRequestCount);
+    }
+
+    /// <summary>
+    /// Verifies typed OCI manifest serialization omits null optional properties while preserving required values.
+    /// </summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -147,6 +278,9 @@ public partial class ManifestOperationsTests
         Assert.Equal(0, handler.RemainingRequestCount);
     }
 
+    /// <summary>
+    /// Verifies fallback updates retry with a fresh strong ETag and preserve concurrent index entries.
+    /// </summary>
     [Fact]
     public async Task PublishAsync_FallbackPreconditionFailed_RereadsIndexAndUsesFreshStrongValidator()
     {
@@ -189,6 +323,9 @@ public partial class ManifestOperationsTests
         Assert.Equal(0, handler.RemainingRequestCount);
     }
 
+    /// <summary>
+    /// Verifies fallback maintenance accepts an omitted index mediaType and uses only strong ETags conditionally.
+    /// </summary>
     [Theory]
     [InlineData(null, false)]
     [InlineData("W/\"index-v1\"", false)]
