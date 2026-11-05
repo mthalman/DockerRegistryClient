@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Valleysoft.DockerRegistryClient.Credentials;
 using Xunit;
 
 namespace Valleysoft.DockerRegistryClient.Tests;
@@ -127,8 +128,9 @@ public partial class ManifestOperationsTests
         }
         finally
         {
+            errorContent.Release();
             cleanup.Cancel();
-            await outcome;
+            await outcome.WaitAsync(TimeSpan.FromSeconds(10));
         }
     }
 
@@ -156,8 +158,72 @@ public partial class ManifestOperationsTests
         }
         finally
         {
+            errorContent.Release();
             cancellation.Cancel();
-            await outcome;
+            await outcome.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+    }
+
+    [Fact]
+    public async Task BlockingProbeErrorContent_ReleaseUnblocksReadWithoutCancellation()
+    {
+        using var content = new BlockingProbeErrorContent();
+        Task read = content.CopyToAsync(Stream.Null, CancellationToken.None);
+        try
+        {
+            await content.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.False(read.IsCompleted);
+
+            content.Release();
+
+            await read.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        finally
+        {
+            content.Release();
+            await read.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+    }
+
+    [Fact]
+    public async Task DeleteAsync_NativeReferrersProbe_ExcludesCredentialsFromHttpTimeout()
+    {
+        var credentials = new GatedProbeCredentials();
+        var handler = new MockHttpMessageHandler();
+        handler.AddExpectedRequest(
+            HttpMethod.Get,
+            $"https://registry.example/v2/repo/manifests/{ManifestDigest}",
+            ManifestResponse(ManifestMediaTypes.OciManifestSchema1, CreateSubjectManifestContent()));
+        var probeContent = new ProbeContent();
+        handler.AddExpectedRequest(
+            HttpMethod.Get,
+            $"https://registry.example/v2/repo/referrers/{SubjectDigest}",
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = probeContent });
+        handler.AddExpectedRequest(
+            HttpMethod.Delete,
+            $"https://registry.example/v2/repo/manifests/{ManifestDigest}",
+            new HttpResponseMessage(HttpStatusCode.Accepted));
+        using var httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(1) };
+        using var client = new RegistryClient("registry.example", credentials, httpClient);
+        Task<Exception?> outcome = Record.ExceptionAsync(
+            () => client.Manifests.DeleteAsync("repo", ManifestDigest));
+
+        try
+        {
+            await credentials.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            // Hold credential processing past the HTTP deadline to isolate where that deadline starts.
+            await Task.Delay(httpClient.Timeout + TimeSpan.FromSeconds(1));
+            credentials.Release();
+
+            Assert.Null(await outcome.WaitAsync(TimeSpan.FromSeconds(10)));
+            Assert.False(probeContent.IsSerialized);
+            Assert.True(probeContent.IsDisposed);
+            Assert.Equal(0, handler.RemainingRequestCount);
+        }
+        finally
+        {
+            credentials.Release();
+            await outcome.WaitAsync(TimeSpan.FromSeconds(10));
         }
     }
 
@@ -358,10 +424,31 @@ public partial class ManifestOperationsTests
         return handler;
     }
 
+    private sealed class GatedProbeCredentials : IRegistryClientCredentials
+    {
+        private readonly TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Release() => release.TrySetResult();
+
+        public async Task ProcessHttpRequestAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken = default)
+        {
+            if (request.RequestUri!.AbsolutePath.Contains("/referrers/", StringComparison.Ordinal))
+            {
+                Started.TrySetResult();
+                await release.Task.WaitAsync(cancellationToken);
+            }
+        }
+    }
+
     private sealed class BlockingProbeErrorContent : HttpContent
     {
+        private readonly TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool IsDisposed { get; private set; }
+
+        public void Release() => release.TrySetResult();
 
         protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
             SerializeToStreamAsync(stream, context, CancellationToken.None);
@@ -370,7 +457,7 @@ public partial class ManifestOperationsTests
             Stream stream, TransportContext? context, CancellationToken cancellationToken)
         {
             ReadStarted.TrySetResult();
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            await release.Task.WaitAsync(cancellationToken);
         }
 
         protected override bool TryComputeLength(out long length)

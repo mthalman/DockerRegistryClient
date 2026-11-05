@@ -374,16 +374,12 @@ internal class ManifestOperations : IManifestWriteOperations
         using HttpRequestMessage request = new(
             HttpMethod.Get,
             RegistryUriBuilder.Referrers(Client.BaseUri, repositoryName, subjectDigest));
-        using CancellationTokenSource? timeoutSource = Client.HttpClient.Timeout == Timeout.InfiniteTimeSpan
-            ? null
-            : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutSource?.CancelAfter(Client.HttpClient.Timeout);
         try
         {
             using HttpResponseMessage response = await Client.SendRequestCoreAsync(
                 request,
-                cancellationToken: timeoutSource?.Token ?? cancellationToken,
-                completionOption: HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+                cancellationToken: cancellationToken,
+                skipSuccessfulResponseBody: true).ConfigureAwait(false);
             return true;
         }
         catch (RegistryException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)

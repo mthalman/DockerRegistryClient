@@ -180,7 +180,8 @@ public class RegistryClient : IDisposable
         bool ignoreUnsuccessfulResponse = false,
         CancellationToken cancellationToken = default,
         HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead,
-        bool applyCredentials = true)
+        bool applyCredentials = true,
+        bool skipSuccessfulResponseBody = false)
     {
         if (applyCredentials && this.credentials is not null && request.Headers.Authorization is null)
         {
@@ -189,7 +190,20 @@ public class RegistryClient : IDisposable
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        HttpResponseMessage response = await this.HttpClient.SendAsync(request, completionOption, cancellationToken).ConfigureAwait(false);
+        // ResponseHeadersRead ends HttpClient's timeout at headers; retain it through error parsing.
+        using CancellationTokenSource? timeoutSource =
+            skipSuccessfulResponseBody && this.HttpClient.Timeout != Timeout.InfiniteTimeSpan
+                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                : null;
+        timeoutSource?.CancelAfter(this.HttpClient.Timeout);
+        CancellationToken requestCancellationToken = timeoutSource?.Token ?? cancellationToken;
+        if (skipSuccessfulResponseBody)
+        {
+            completionOption = HttpCompletionOption.ResponseHeadersRead;
+        }
+
+        HttpResponseMessage response = await this.HttpClient.SendAsync(
+            request, completionOption, requestCancellationToken).ConfigureAwait(false);
 
         if (ignoreUnsuccessfulResponse)
         {
@@ -200,13 +214,13 @@ public class RegistryClient : IDisposable
         {
             try
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                requestCancellationToken.ThrowIfCancellationRequested();
 
                 string errorContent = string.Empty;
                 if (response.Content is not null)
                 {
 #if NET5_0_OR_GREATER
-                    errorContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    errorContent = await response.Content.ReadAsStringAsync(requestCancellationToken).ConfigureAwait(false);
 #else
                     errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 #endif
