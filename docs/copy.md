@@ -23,14 +23,9 @@ Console.WriteLine($"Published digest: {result.Digest}");
 When both clients address the same registry origin (scheme, host, and port),
 `CopyAsync` first attempts to mount each missing blob from the source repository
 into the destination repository. If the registry does not support mounting or
-denies mount authorization, the operation stages the blob in a temporary file
-before uploading it, using the source client's credentials to download and the
-destination client's credentials to upload. Staging prevents shared HTTP
-connection limits from blocking the transfer, but requires enough temporary
-disk space for the largest blob. Temporary files are created
-with owner-only access on Unix. Downloads are limited to the size declared by
-the manifest descriptor and reject truncated or oversized content. Blobs that
-already exist in the destination repository are skipped.
+denies mount authorization, `CopyAsync` downloads the blob using the source
+client's credentials and uploads it using the destination client's credentials.
+Blobs that already exist in the destination repository are skipped.
 
 ## Copy between registries
 
