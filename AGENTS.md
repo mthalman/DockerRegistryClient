@@ -2,7 +2,7 @@
 
 ## Build
 
-Requires the .NET 10 SDK.
+Requires the .NET SDK specified in [global.json](global.json).
 
 All commands run from the `src/` directory:
 
@@ -42,12 +42,12 @@ Paginated results are wrapped in `Page<T>`, which carries a `NextPageLink` for c
 - **Serialization**: Uses `System.Text.Json` exclusively (no Newtonsoft.Json).
 - **Async pattern**: All public API methods are async, accept an optional `CancellationToken`, and use `.ConfigureAwait(false)`.
 - **Error handling**: Unsuccessful HTTP responses throw `RegistryException` with `Errors` and `StatusCode` properties. Operations that check existence (e.g., `ExistsAsync`) return `true` for successful responses and `false` only for HTTP 404 Not Found; other unsuccessful responses throw `RegistryException`.
-- **C# language version**: 12.0 with nullable reference types and implicit usings enabled.
+- **C# configuration**: Follow the language version in the library's project file, with nullable reference types and implicit usings enabled.
 - **Internal visibility**: Operation implementation classes are `internal`; only interfaces and models are public.
 
 ## Pull request labels
 
-Follow the pinned [release-automation author guide](https://github.com/mthalman/release-automation/blob/90551757fe8b061d4dff1a4cab12f10e58f07201/docs/author-guide.md).
+Follow the pinned [release-automation author guide](https://github.com/mthalman/release-automation/blob/dbda9774dde7b70af4eb22be7257ee9cd17c2d6f/docs/author-guide.md).
 The callers currently use the toolkit defaults, with no `config-path`.
 Before choosing labels or fragment paths, check the callers at the trusted PR
 base (or the actual default branch when preparing a PR). If a `config-path`
@@ -89,6 +89,9 @@ report that for maintainer review.
 
 Breaking changes also require a new, completed
 `.changes/+short-kebab-slug.breaking.md` fragment, following the
-[fragment template](https://github.com/mthalman/release-automation/blob/90551757fe8b061d4dff1a4cab12f10e58f07201/docs/fragment-template.md).
+[fragment template](https://github.com/mthalman/release-automation/blob/dbda9774dde7b70af4eb22be7257ee9cd17c2d6f/docs/fragment-template.md).
+Include a meaningful introductory paragraph after the H3 title and before the
+six required H4 sections. The introduction must describe the change and whom
+it affects; lists, code blocks, and placeholders do not satisfy it.
 Never combine `semver:major` with `skip-changelog`. Retain fragments after
 release; editing an existing fragment does not satisfy a new breaking change.

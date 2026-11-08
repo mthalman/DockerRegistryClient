@@ -2,13 +2,27 @@
 
 Access manifest operations via `client.Manifests`.
 
+All snippets below use the following setup code:
+
+```csharp
+using System.Security.Cryptography;
+using Valleysoft.DockerRegistryClient;
+using Valleysoft.DockerRegistryClient.Credentials;
+using Valleysoft.DockerRegistryClient.Models.Manifests;
+using Valleysoft.DockerRegistryClient.Models.Manifests.Docker;
+using Valleysoft.DockerRegistryClient.Models.Manifests.Oci;
+
+using RegistryClient client = new("mcr.microsoft.com");
+BasicAuthenticationCredentials credentials = new("username", "password");
+using RegistryClient destinationClient = new("myregistry.example.com", credentials);
+```
+
 ## Get a manifest
 
 `GetAsync` returns a `ManifestInfo` containing the response media type, canonical
 content digest, original content bytes, and manifest:
 
 ```csharp
-using RegistryClient client = new("mcr.microsoft.com");
 ManifestInfo info = await client.Manifests.GetAsync("dotnet/sdk", "latest");
 
 Console.WriteLine($"Media type: {info.MediaType}");
@@ -22,22 +36,30 @@ in memory and does not require disposal.
 
 ## Publish a manifest
 
-Publish a Docker or OCI model under a tag or digest reference:
+`PublishAsync` publishes manifest content under a tag or digest reference and
+returns a `ManifestPublishResult`. Referenced config and layer blobs must
+exist in the destination repository. The example publishes an OCI image
+manifest with a configuration blob and no layers:
 
 ```csharp
+byte[] config = """{"architecture":"amd64","os":"linux","rootfs":{"type":"layers","diff_ids":[]}}"""u8.ToArray();
+string configDigest = $"sha256:{Convert.ToHexString(SHA256.HashData(config)).ToLowerInvariant()}";
+using Stream configStream = new MemoryStream(config);
+await destinationClient.Blobs.UploadAsync("example/image", configStream, configDigest);
+
 var manifest = new OciImageManifest
 {
     Config = new OciDescriptor
     {
         MediaType = "application/vnd.oci.image.config.v1+json",
         Digest = configDigest,
-        Size = configSize
+        Size = config.LongLength
     },
     Layers = []
 };
 
 ManifestPublishResult result =
-    await client.Manifests.PublishAsync("example/image", "latest", manifest);
+    await destinationClient.Manifests.PublishAsync("example/image", "latest", manifest);
 
 Console.WriteLine($"Digest: {result.Digest}");
 Console.WriteLine($"Location: {result.Location}");
@@ -48,11 +70,12 @@ the registry's `Location` response header. `Digest` contains the
 `Docker-Content-Digest` response header when the registry provides it; otherwise,
 it is `null`.
 
-Use the byte-oriented overload when copying a retrieved manifest or when its
-exact representation matters:
+The byte-oriented overload accepts the original bytes and media type.
+`PublishAsync` does not copy referenced blobs or child manifests;
+[CopyAsync](copy.md) copies the reachable content graph.
 
 ```csharp
-ManifestInfo source = await sourceClient.Manifests.GetAsync("example/image", "latest");
+ManifestInfo source = await client.Manifests.GetAsync("dotnet/sdk", "latest");
 
 ManifestPublishResult copied = await destinationClient.Manifests.PublishAsync(
     "example/image",
@@ -71,17 +94,10 @@ source-generated JSON metadata. It does not fall back to reflection: publishing
 a custom `IManifest` implementation, including a type derived from a built-in
 model, throws `NotSupportedException`.
 
-To publish a custom manifest, including from a trimmed or Native AOT
-application, use the overload that accepts source-generated `JsonTypeInfo` for
-the concrete manifest type:
-
-```csharp
-await client.Manifests.PublishAsync(
-    "example/image",
-    "latest",
-    customManifest,
-    AppJsonContext.Default.CustomManifest);
-```
+Custom manifests, including in trimmed or Native AOT applications, require
+the overload accepting `JsonTypeInfo` for their concrete type. The
+[custom-manifest migration example](migrations/8.0.0/custom-manifest-json-metadata.md#recommended-action)
+shows the manifest class, source-generated context, and publication together.
 
 Publishing custom serialized content as a `RawManifest` or through the
 byte-oriented overload is also supported.
@@ -98,20 +114,23 @@ interface to support the publishing and deletion extension methods.
 
 ## Delete a manifest
 
-Resolve a tag to its canonical digest and delete the manifest by digest:
+`DeleteAsync` accepts a digest, not a tag. Deleting a manifest makes it
+unavailable through every tag that references it in that repository.
+Deletion requires registry support and authorization.
+[DeleteTagAsync](#delete-a-tag) removes only a tag association.
 
 ```csharp
-string digest = await client.Manifests.GetDigestAsync("example/image", "latest");
-await client.Manifests.DeleteAsync("example/image", digest);
+string digest = await destinationClient.Manifests.GetDigestAsync("example/image", "latest");
+await destinationClient.Manifests.DeleteAsync("example/image", digest);
 ```
 
 ## Delete a tag
 
-Delete only a tag association while preserving the referenced manifest and any
-other tags that point to it:
+`DeleteTagAsync` removes a tag association while preserving the referenced
+manifest and other tags that point to it:
 
 ```csharp
-await client.Manifests.DeleteTagAsync("example/image", "old-tag");
+await destinationClient.Manifests.DeleteTagAsync("example/image", "old-tag");
 ```
 
 `DeleteTagAsync` does not accept digest references. Tag deletion is optional in
@@ -132,11 +151,16 @@ throw `RegistryException`; see [Error Handling](error-handling.md).
 
 ## Get a digest
 
-Retrieve the digest for a tag or digest reference without downloading the full manifest:
+`GetDigestAsync` resolves a tag or digest reference to a manifest digest:
 
 ```csharp
 string digest = await client.Manifests.GetDigestAsync("dotnet/sdk", "latest");
 ```
+
+`GetDigestAsync` first sends a HEAD request. If the response includes
+`Docker-Content-Digest`, that value is returned. Without that header, a
+digest-pinned request returns its requested digest after a successful HEAD.
+A tag lookup instead downloads the manifest with GET to resolve its digest.
 
 ## Manifest types
 
@@ -165,7 +189,7 @@ Concrete implementations:
 
 ## Handle manifest types
 
-Use pattern matching to handle different manifest types:
+`ManifestInfo.Manifest` supports pattern matching on its concrete type:
 
 ```csharp
 ManifestInfo info = await client.Manifests.GetAsync("dotnet/sdk", "latest");
@@ -190,7 +214,7 @@ switch (info.Manifest)
 }
 ```
 
-You can also match on `MediaType`:
+`MediaType` also identifies the manifest format:
 
 ```csharp
 if (info.MediaType == ManifestMediaTypes.DockerManifestList)
@@ -200,6 +224,11 @@ if (info.MediaType == ManifestMediaTypes.DockerManifestList)
 }
 ```
 
-`ManifestInfo.MediaType` and `DockerContentDigest` come from the registry's HTTP
-response headers. `RawManifest.MediaType` uses that same response media type;
-the JSON document does not need to contain its own `mediaType` field.
+`ManifestInfo.MediaType` comes from the response's `Content-Type` header.
+`DockerContentDigest` uses `Docker-Content-Digest` when present. Otherwise,
+retrieval uses the requested digest or calculates SHA-256 over the original
+response bytes for a tag lookup. Supported SHA-256, SHA-384, and SHA-512
+digests are verified against retrieved bytes.
+
+`RawManifest.MediaType` uses the response media type; the JSON document does
+not need to contain its own `mediaType` field.

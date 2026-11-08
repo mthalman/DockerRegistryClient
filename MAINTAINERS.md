@@ -31,9 +31,9 @@ users do not need to know about. Do not apply `skip-changelog` to production
 dependency updates, user-facing fixes, features, documentation, or significant
 release behavior.
 
-The shared [release automation](https://github.com/mthalman/release-automation/tree/90551757fe8b061d4dff1a4cab12f10e58f07201)
+The shared [release automation](https://github.com/mthalman/release-automation/tree/dbda9774dde7b70af4eb22be7257ee9cd17c2d6f)
 uses these labels to organize the unpublished release and select its next
-version. The workflows pin v1.0.1 and use its default configuration.
+version. The workflows pin the toolkit revision and use its default configuration.
 `semver:major` changes appear under Breaking Changes and require a new
 [migration fragment](CONTRIBUTING.md#document-breaking-changes).
 Never combine `semver:major` and `skip-changelog`.
@@ -116,7 +116,7 @@ prepared release skips build and publication on rerun. Partial publication has
 no rollback: NuGet push uses `--skip-duplicate`, and asset uploads use
 `--clobber`. Inspect NuGet and GitHub state before retrying. Preparation and
 finalization are not atomic with external publication or other GitHub writers.
-See the pinned [publication guide](https://github.com/mthalman/release-automation/blob/90551757fe8b061d4dff1a4cab12f10e58f07201/docs/tag-publishing.md)
+See the pinned [publication guide](https://github.com/mthalman/release-automation/blob/dbda9774dde7b70af4eb22be7257ee9cd17c2d6f/docs/tag-publishing.md)
 for provenance checks, race limitations, and recovery.
 
 GitHub Releases are the release-note system of record. The repository does not
@@ -151,7 +151,7 @@ after preparation, GitHub may require Workflows write authorization to publish
 the older target, which `GITHUB_TOKEN` cannot receive. Investigate 403/404 errors
 instead of bypassing checks. Any additional narrowly scoped credential needs
 maintainer approval; see the shared
-[credential requirements](https://github.com/mthalman/release-automation/blob/90551757fe8b061d4dff1a4cab12f10e58f07201/docs/tag-publishing.md#choose-credentials-and-verify-draft-visibility).
+[credential requirements](https://github.com/mthalman/release-automation/blob/dbda9774dde7b70af4eb22be7257ee9cd17c2d6f/docs/tag-publishing.md#choose-credentials-and-verify-draft-visibility).
 
 ## Upgrade release automation
 
@@ -162,10 +162,17 @@ keep all refs and version comments identical. Update pinned documentation links
 in `AGENTS.md`, `CONTRIBUTING.md`, and this guide in the same change; Renovate
 does not synchronize those links.
 
+Before adopting a toolkit revision that adds validation requirements, check
+retained breaking fragments and migration topics as well as new documents.
+Every retained fragment needs an introductory paragraph after its title, and
+every retained migration topic needs one after its version metadata.
+Correct published topics through review without changing their paths or
+regenerating published history.
+
 Keep workflow-level `release-drafter` concurrency with `queue: max` and
 `cancel-in-progress: false` on the tag workflow. Do not add that group to the
 draft caller; the reusable callee already owns it. Follow the pinned
-[upgrade guide](https://github.com/mthalman/release-automation/blob/90551757fe8b061d4dff1a4cab12f10e58f07201/docs/upgrading.md)
+[upgrade guide](https://github.com/mthalman/release-automation/blob/dbda9774dde7b70af4eb22be7257ee9cd17c2d6f/docs/upgrading.md)
 and refresh the draft successfully before tagging.
 
 ## Configure trusted publishing

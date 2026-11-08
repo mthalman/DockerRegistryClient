@@ -1,15 +1,32 @@
 # Copy Images and Artifacts
 
-Use `CopyAsync` on a source `RegistryClient` to copy an image or OCI artifact
-and its dependencies to a destination repository and reference. The source
+`RegistryClient.CopyAsync` copies an image or OCI artifact and its dependencies
+to a destination repository and reference. The source
 client must be able to pull the content, and the destination client must be able
 to push it.
+
+All snippets below use the following setup code:
+
+```csharp
+using Valleysoft.DockerRegistryClient;
+using Valleysoft.DockerRegistryClient.Credentials;
+
+BasicAuthenticationCredentials credentials = new("username", "password");
+using RegistryClient client = new("registry.example.com", credentials);
+
+BasicAuthenticationCredentials sourceCredentials = new("source-user", "source-password");
+BasicAuthenticationCredentials destinationCredentials = new("destination-user", "destination-password");
+using RegistryClient source = new("source.example.com", sourceCredentials);
+using RegistryClient destination = new(
+    "destination.example.com",
+    destinationCredentials);
+```
+
+The source repositories and references must already exist.
 
 ## Copy within a registry
 
 ```csharp
-using RegistryClient client = new("registry.example.com", credentials);
-
 ManifestPublishResult result = await client.CopyAsync(
     "development/service",
     "candidate",
@@ -30,18 +47,12 @@ Blobs that already exist in the destination repository are skipped.
 ## Copy between registries
 
 ```csharp
-using RegistryClient source = new("source.example.com", sourceCredentials);
-using RegistryClient destination = new(
-    "destination.example.com",
-    destinationCredentials);
-
 ManifestPublishResult result = await source.CopyAsync(
     "team/service",
     "candidate",
     destination,
     "archive/service",
-    "release-2026",
-    cancellationToken);
+    "release-2026");
 
 Console.WriteLine($"Published digest: {result.Digest}");
 ```
@@ -81,7 +92,9 @@ The copy operation:
   descriptor and rejects conflicting descriptors for the same digest.
 - Deduplicates repeated manifest and blob digests.
 - Rejects conflicting sizes for descriptors that reference the same blob.
-- Skips child manifests and blobs that already exist at the destination.
+- Skips uploading blobs and publishing child manifests that already exist at
+  the destination. Existing child manifests are still downloaded from the
+  source and traversed so their dependencies can be copied.
 - Preserves Docker foreign-layer and OCI non-distributable-layer descriptors
   without uploading the referenced blobs.
 - Publishes dependencies before the manifests that reference them.

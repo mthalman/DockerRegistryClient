@@ -12,10 +12,14 @@ non-success HTTP response.
 
 Each `Error` exposes `Code`, `Message`, and an optional JSON `Detail` value.
 
+Credential options are described in [Authentication](authentication.md).
+
 ```csharp
 using Valleysoft.DockerRegistryClient;
 using Valleysoft.DockerRegistryClient.Models;
 using Valleysoft.DockerRegistryClient.Models.Manifests;
+
+using RegistryClient client = new("myregistry.example.com");
 
 try
 {
@@ -35,9 +39,8 @@ catch (RegistryException ex)
 ```
 
 Some operations replace a `404 Not Found` exception with a more specific
-`RegistryException`, such as `Manifest not found.`. In that case, read the
-original status and error details from the inner exception, as the example
-does.
+`RegistryException`, such as `Manifest not found.`. The inner exception
+retains the original status and structured error details.
 
 ## Check whether a resource exists
 
@@ -46,8 +49,8 @@ successful HTTP responses and `false` only for `404 Not Found`.
 
 Other non-success responses, including `401 Unauthorized`, `403 Forbidden`,
 `429 Too Many Requests`, and `5xx` server errors, throw `RegistryException`.
-Read the response status and structured registry errors from the exception's
-`StatusCode` and `Errors` properties. Authentication failures, authorization
+The exception's `StatusCode` and `Errors` properties contain the response
+status and structured registry errors. Authentication failures, authorization
 failures, rate limiting, and registry outages do not mean the resource is missing.
 
 Cancellation and transport failures also propagate to the caller rather than
