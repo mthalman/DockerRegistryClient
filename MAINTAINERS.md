@@ -164,8 +164,6 @@ does not synchronize those links.
 
 Before adopting a toolkit revision that adds validation requirements, check
 retained breaking fragments and migration topics as well as new documents.
-Every retained fragment needs an introductory paragraph after its title, and
-every retained migration topic needs one after its version metadata.
 Correct published topics through review without changing their paths or
 regenerating published history.
 

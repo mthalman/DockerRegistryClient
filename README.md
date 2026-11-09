@@ -7,8 +7,6 @@ A .NET client library for the [OCI Distribution Spec](https://github.com/opencon
 
 ## Install the package
 
-Your consuming project must target .NET 8 or newer.
-
 ```shell
 dotnet add package Valleysoft.DockerRegistryClient
 ```
