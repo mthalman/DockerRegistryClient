@@ -5,7 +5,7 @@ behavior-changing contribution so that maintainers can confirm the approach.
 
 ## Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- [.NET SDK](https://dotnet.microsoft.com/download/dotnet) matching [global.json](global.json)
 - Git
 - Docker, when running the live-registry integration tests
 
@@ -47,14 +47,15 @@ dotnet test
 
 ## Document breaking changes
 
-Follow the pinned [release-automation author guide](https://github.com/mthalman/release-automation/blob/90551757fe8b061d4dff1a4cab12f10e58f07201/docs/author-guide.md)
+Follow the pinned [release-automation author guide](https://github.com/mthalman/release-automation/blob/dbda9774dde7b70af4eb22be7257ee9cd17c2d6f/docs/author-guide.md)
 and the [labeling rules](MAINTAINERS.md#label-pull-requests). The workflows use
 the toolkit's default labels and paths.
 
 For each breaking change, add a new file named
 `.changes/+short-kebab-slug.breaking.md` and apply `semver:major`.
-Use the [fragment template](https://github.com/mthalman/release-automation/blob/90551757fe8b061d4dff1a4cab12f10e58f07201/docs/fragment-template.md):
-one H3 title followed by these H4 sections, in order:
+Use the [fragment template](https://github.com/mthalman/release-automation/blob/dbda9774dde7b70af4eb22be7257ee9cd17c2d6f/docs/fragment-template.md):
+one H3 title, a brief introductory paragraph describing the change and whom
+it affects, then these H4 sections in order:
 
 - Previous behavior
 - New behavior
@@ -63,7 +64,9 @@ one H3 title followed by these H4 sections, in order:
 - Recommended action
 - Affected APIs
 
-Each section needs concrete guidance, not placeholders. Never combine
+The introduction must be prose, not a list, blockquote, code block, or version
+metadata. The introduction and each section need concrete guidance, not
+placeholders. Never combine
 `semver:major` with `skip-changelog`. Retain fragments after publication; a new
 breaking change requires a new fragment, not an edit to an existing one.
 Non-breaking changes do not need fragments.

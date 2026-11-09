@@ -3,6 +3,9 @@
 `RegistryClient` supports anonymous access, basic credentials, bearer tokens,
 and custom credentials.
 
+Registry names and credentials in the examples are placeholders. Real
+credentials do not belong in source control.
+
 When `RegistryClient` creates its own `HttpClient`, it also configures an
 OAuth 2.0 bearer token exchange handler for registry authentication challenges
 and explicit redirect handling over the standard .NET `HttpClientHandler`.
@@ -41,8 +44,8 @@ credentials when it requests an access token.
 
 ## Use a token
 
-Use a previously obtained token. The default authentication scheme is
-`Bearer`:
+`TokenCredentials` supplies a previously obtained token. Its default
+authentication scheme is `Bearer`:
 
 ```csharp
 using Valleysoft.DockerRegistryClient;
@@ -52,15 +55,27 @@ TokenCredentials credentials = new("mytoken");
 using RegistryClient client = new("myregistry.example.com", credentials);
 ```
 
-Pass a second argument when the token uses a different authentication scheme:
+The second constructor argument overrides the authentication scheme:
 
 ```csharp
 TokenCredentials credentials = new("mytoken", "CustomScheme");
 ```
 
+If a bearer-authenticated request receives an OAuth bearer challenge, the
+built-in handler sends the supplied token to the token realm in a POST form
+with `grant_type=refresh_token` and `client_id=registry-client`. It retries
+the registry request with the returned access token. A previously obtained
+access token is therefore usable without exchange only when the registry
+accepts it directly; a challenged token must be accepted by the token service
+as a refresh token.
+
+Challenge processing can throw `System.Security.Authentication.AuthenticationException`.
+Token-service HTTP and JSON failures can throw `HttpRequestException` or
+`System.Text.Json.JsonException`, rather than `RegistryException`.
+
 ## Provide custom credentials
 
-Implement `IRegistryClientCredentials` to control how each request sets its
+`IRegistryClientCredentials.ProcessHttpRequestAsync` controls the request's
 `Authorization` header:
 
 ```csharp
@@ -101,12 +116,14 @@ registry-specific secrets in shared default headers.
 
 ## Control the HTTP pipeline
 
-Pass an `HttpClient` when you need to configure transport behavior, proxies, or
-additional handlers:
+The `HttpClient` constructor argument accepts a caller-configured pipeline
+for transport behavior, proxies, or additional handlers:
 
 ```csharp
 using Valleysoft.DockerRegistryClient;
+using Valleysoft.DockerRegistryClient.Credentials;
 
+BasicAuthenticationCredentials credentials = new("username", "password");
 HttpClient httpClient = new();
 using RegistryClient client = new(
     "myregistry.example.com",
@@ -128,6 +145,17 @@ the supplied pipeline must provide token-handling behavior or use credentials
 that the registry accepts without the built-in challenge flow. Use the default
 `HttpClient` when you need the built-in OAuth token exchange and redirect
 handling.
+
+## Server-issued links
+
+`NextPageLink` and upload `Location` are opaque continuation links. Their
+values must remain unchanged because they can contain server state.
+
+A link may point to external storage or another server. The client does not
+reuse registry authorization at a different origin, but secrets in shared
+default headers or custom headers can still be sent there. Use the
+[credential provider](#provide-custom-credentials) for registry authorization
+rather than adding secrets to shared headers.
 
 ## Proxy support
 
@@ -152,8 +180,8 @@ Body-preserving redirects can forward a refresh-token form to another origin.
 Other headers are not filtered through an allowlist.
 
 This transport trust model follows the registry clients in
-[BuildKit v0.33.0](https://github.com/moby/buildkit/blob/v0.33.0/util/resolver/resolver.go)
-and [Moby v29.8.1](https://github.com/moby/moby/blob/docker-v29.8.1/daemon/pkg/registry/registry.go),
+[BuildKit](https://github.com/moby/buildkit/blob/v0.33.0/util/resolver/resolver.go)
+and [Moby](https://github.com/moby/moby/blob/docker-v29.8.1/daemon/pkg/registry/registry.go),
 with [containerd's token handling](https://github.com/moby/buildkit/blob/v0.33.0/vendor/github.com/containerd/containerd/v2/core/remotes/docker/auth/fetch.go).
 It does not reproduce Go's redirect behavior: the library keeps its existing
 .NET method-conversion, authorization-clearing, and HTTPS-downgrade rules.

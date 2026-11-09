@@ -39,12 +39,28 @@ reflection path makes the package safe for trimmed and Native AOT applications.
 ## Recommended action
 
 Publish custom manifest types with the overload that accepts source-generated
-JSON metadata:
+JSON metadata. Replace the registry and credential placeholders with your
+values, and use a media type and content that your registry accepts:
 
 ```csharp
 using System.Text.Json.Serialization;
 using Valleysoft.DockerRegistryClient;
+using Valleysoft.DockerRegistryClient.Credentials;
 using Valleysoft.DockerRegistryClient.Models.Manifests;
+
+BasicAuthenticationCredentials credentials = new("username", "password");
+using RegistryClient client = new("myregistry.example.com", credentials);
+CustomManifest customManifest = new()
+{
+    MediaType = "application/vnd.example.manifest.v1+json",
+    CustomValue = "example"
+};
+
+await client.Manifests.PublishAsync(
+    "example/image",
+    "latest",
+    customManifest,
+    AppJsonContext.Default.CustomManifest);
 
 sealed class CustomManifest : Manifest
 {
@@ -56,12 +72,6 @@ sealed class CustomManifest : Manifest
 partial class AppJsonContext : JsonSerializerContext
 {
 }
-
-await client.Manifests.PublishAsync(
-    "example/image",
-    "latest",
-    customManifest,
-    AppJsonContext.Default.CustomManifest);
 ```
 
 Alternatively, serialize the manifest in the application and publish the bytes

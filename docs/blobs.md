@@ -2,38 +2,62 @@
 
 Access blob operations via `client.Blobs`.
 
-## Upload a blob
-
-Use `UploadAsync` for a one-call convenience upload. Supply the digest of the
-complete stream:
+All snippets below use the following setup code:
 
 ```csharp
+using System.Security.Cryptography;
 using Valleysoft.DockerRegistryClient;
+using Valleysoft.DockerRegistryClient.Credentials;
+using Valleysoft.DockerRegistryClient.Models.Images;
+using Valleysoft.DockerRegistryClient.Models.Manifests;
 
+BasicAuthenticationCredentials credentials = new("username", "password");
 using RegistryClient client = new("myregistry.example.com", credentials);
+const string repository = "myrepo";
+```
+
+## Upload a blob
+
+`UploadAsync` initializes and completes a blob upload in one call. Its
+`digest` argument identifies the complete uploaded content.
+
+```csharp
 using Stream data = File.OpenRead("layer.tar.gz");
+string digest = $"sha256:{Convert.ToHexString(await SHA256.HashDataAsync(data)).ToLowerInvariant()}";
+data.Position = 0;
 
 BlobUploadResult result = await client.Blobs.UploadAsync(
-    "myrepo",
+    repository,
     data,
-    "sha256:abc123...");
+    digest);
 
 Console.WriteLine(result.Digest);
 ```
 
-Use the primitive upload operations described in
-[Upload a blob in chunks](#upload-a-blob-in-chunks) when you need to retry
-individual chunks.
+`UploadAsync`, `SendUploadStreamAsync`, and stream-taking `EndUploadAsync`
+consume from the stream's current position and dispose the supplied stream.
+The digest must match those bytes.
+
+The [chunked upload APIs](#upload-a-blob-in-chunks) provide control over
+individual requests.
 
 ## Download a blob
 
-`GetAsync` returns a `Stream`. The caller is responsible for disposing it:
+`GetAsync` buffers the complete response before returning a `Stream`.
+The caller owns the returned stream. `GetRangeAsync` instead streams the
+response after headers arrive.
+
+The `digest` argument identifies a blob, not its parent manifest. Image
+manifests expose blob digests in their config and layer descriptors.
+The example below reads the first layer of a single-image manifest and
+overwrites `layer.tar.gz`:
 
 ```csharp
-using Valleysoft.DockerRegistryClient;
-
-using RegistryClient client = new("mcr.microsoft.com");
-using Stream blobStream = await client.Blobs.GetAsync("dotnet/sdk", "sha256:abc123...");
+ManifestInfo info = await client.Manifests.GetAsync(repository, "latest");
+IImageManifest imageManifest = info.Manifest as IImageManifest
+    ?? throw new InvalidOperationException("Select a single-image manifest before downloading a layer.");
+string blobDigest = imageManifest.Layers.First().Digest;
+using Stream blobStream = await client.Blobs.GetAsync(repository, blobDigest);
 
 using FileStream file = File.Create("layer.tar.gz");
 await blobStream.CopyToAsync(file);
@@ -41,13 +65,14 @@ await blobStream.CopyToAsync(file);
 
 ## Download part of a blob
 
-Use `GetRangeAsync` to download a bounded byte range. `offset` is zero-based,
-and `length` must be positive:
+`GetRangeAsync` requests a byte range from `blobDigest`, the digest of the
+target blob. `offset` is zero-based. `length` is a positive byte count;
+omitting it requests the remaining bytes.
 
 ```csharp
 BlobDownloadResult download = await client.Blobs.GetRangeAsync(
-    "dotnet/sdk",
-    "sha256:abc123...",
+    repository,
+    blobDigest,
     offset: 1024,
     length: 4096);
 
@@ -76,17 +101,17 @@ A registry can also ignore a range request and return `200 OK`. In that case,
 An unsatisfiable range throws a `RegistryException` with `StatusCode` set to
 `HttpStatusCode.RequestedRangeNotSatisfiable`.
 
-Omit `length` to request bytes from an offset through the end of the blob. To
-resume a download safely, confirm that the returned range starts at the current
-file length before appending the response:
+For resumed downloads, appending is valid only when `IsRangeHonored` is true
+and `RangeStart` equals the existing file length. The existing file must
+contain the prefix of the same blob:
 
 ```csharp
 const string destination = "layer.tar.gz";
 long offset = File.Exists(destination) ? new FileInfo(destination).Length : 0;
 
 BlobDownloadResult download = await client.Blobs.GetRangeAsync(
-    "dotnet/sdk",
-    "sha256:abc123...",
+    repository,
+    blobDigest,
     offset);
 
 using Stream content = download.Content;
@@ -104,36 +129,35 @@ using FileStream file = new(
 await content.CopyToAsync(file);
 ```
 
-If `TotalLength` is available and the file is shorter than that value after the
-copy, repeat the request with the new file length as `offset`. If
-`TotalLength` is unavailable, use an expected length from another trusted
-source to determine whether the download is complete.
+Short partial responses can require additional requests. `TotalLength`, when
+available, indicates the expected assembled length; otherwise completion
+requires a length from another trusted source.
 
 The client does not persist checkpoints, retry interrupted downloads, or
-verify assembled content. After a resumed download completes, verify the
-digest of the entire file against the requested digest before using it.
+verify assembled content. Digest verification of the assembled blob is the
+caller's responsibility.
 
 ## Read an image configuration
 
-`GetImageAsync` downloads and deserializes a blob that contains a Docker or OCI
-image configuration:
+`GetImageAsync` returns an `Image` deserialized from a Docker or OCI
+configuration blob. Its digest is available from `IImageManifest.Config`:
 
 ```csharp
-using System.Text.Json;
-using Valleysoft.DockerRegistryClient.Models.Images;
-
+string configDigest = imageManifest.Config?.Digest
+    ?? throw new InvalidOperationException("The manifest does not contain an image configuration.");
 Image image = await client.Blobs.GetImageAsync(
-    "dotnet/sdk",
-    "sha256:abc123...");
+    repository,
+    configDigest);
 ```
 
-`GetImageAsync` throws `JsonException` when the blob is not a valid image
-configuration.
+`GetImageAsync` throws `System.Text.Json.JsonException` when the JSON cannot
+be deserialized into the image model. It does not validate the complete
+Docker or OCI configuration schema; absent fields can retain model defaults.
 
 ## Check whether a blob exists
 
 ```csharp
-bool exists = await client.Blobs.ExistsAsync("myrepo", "sha256:abc123...");
+bool exists = await client.Blobs.ExistsAsync(repository, blobDigest);
 ```
 
 `ExistsAsync` returns `true` for successful HTTP responses and `false` only for
@@ -142,17 +166,27 @@ bool exists = await client.Blobs.ExistsAsync("myrepo", "sha256:abc123...");
 
 ## Delete a blob
 
-```csharp
-await client.Blobs.DeleteAsync("myrepo", "sha256:abc123...");
-```
+`DeleteAsync` deletes the blob identified by `blobDigest`. Deletion requires
+registry support and authorization. Deleting a referenced blob can make
+images that use it unavailable.
 
-The registry must allow blob deletion.
+```csharp
+await client.Blobs.DeleteAsync(repository, blobDigest);
+```
 
 ## Upload a blob in chunks
 
-Chunked uploads use a multi-request workflow. The `BlobUploadContext` preserves
-the authorization header established by `BeginUploadAsync`; pass the same
-context to every subsequent request in that upload session.
+The primitive upload APIs operate on an upload session:
+
+| Method | Behavior |
+| --- | --- |
+| `BeginUploadAsync` | Creates a session and returns its location, ID, and authorization context |
+| `SendUploadStreamAsync` | Appends a chunk and returns the updated location and offset |
+| `EndUploadAsync` | Completes the session with the complete blob digest and an optional final chunk |
+
+`BlobUploadContext` retains the authorization established during
+initialization. Subsequent chunk and completion requests take that session's
+context and the latest returned `Location`.
 
 The registry may offload uploads to an external HTTP or HTTPS destination, including a
 different host or port. The client trusts that destination with blob contents,
@@ -173,22 +207,24 @@ authorization scoping and caller-controlled headers, and
 [HTTP pipeline ownership](authentication.md#control-the-http-pipeline) for
 injected-client responsibilities.
 
-### 1. Begin the upload
+### Begin the upload
+
+`BeginUploadAsync` takes the destination repository name:
 
 ```csharp
-BlobUploadInitializationResult init = await client.Blobs.BeginUploadAsync("myrepo");
+BlobUploadInitializationResult init = await client.Blobs.BeginUploadAsync(repository);
 ```
 
 The result contains the upload `Location`, `UploadId`, and `UploadContext`.
 
-Pass `Location` back unchanged rather than decoding or rebuilding it. The
-server may include information in the link that it needs for the next request.
-See [server-issued links](migrations/7.0.0/registry-origin-validation.md#server-issued-links)
-for URI resolution and credential-scoping behavior.
+`Location` is an opaque continuation link that can contain server state.
+See [server-issued links](authentication.md#server-issued-links)
+for continuation-link and credential behavior.
 
-### 2. Send chunks
+### Send chunks
 
-Pass the `Location` from each response to the next request:
+`SendUploadStreamAsync` appends the supplied stream's content. Each response
+provides the location for the next request:
 
 ```csharp
 using Stream chunk1 = File.OpenRead("chunk1.bin");
@@ -203,47 +239,50 @@ BlobUploadStreamResult result2 = await client.Blobs.SendUploadStreamAsync(
 Each `BlobUploadStreamResult` contains an updated `Location`, the `UploadId`,
 and the zero-based inclusive `RangeOffset` of the uploaded bytes.
 
-### 3. Complete the upload
+### Complete the upload
 
-Finalize the upload with the digest of the complete blob:
+`EndUploadAsync` takes `digest`, the digest of all uploaded chunks in order,
+not an individual chunk:
 
 ```csharp
 BlobUploadResult uploadResult = await client.Blobs.EndUploadAsync(
-    result2.Location, "sha256:abc123...", init.UploadContext);
+    result2.Location, digest, init.UploadContext);
 ```
 
-To send the final chunk and complete the upload in one request, pass a stream
-to `EndUploadAsync`:
+The optional stream argument appends a final chunk before completion.
+This variant completes the session after `result1` with a second chunk:
 
 ```csharp
-using Stream finalChunk = File.OpenRead("final.bin");
+using Stream finalChunk = File.OpenRead("chunk2.bin");
 BlobUploadResult uploadResult = await client.Blobs.EndUploadAsync(
-    result1.Location, "sha256:abc123...", init.UploadContext, finalChunk);
+    result1.Location, digest, init.UploadContext, finalChunk);
 ```
 
 ### Complete an upload without separate chunk requests
 
-You can skip `SendUploadStreamAsync` and pass the complete stream to
-`EndUploadAsync`. Prefer `UploadAsync` unless you need the initialization
-result:
+`EndUploadAsync` also accepts the complete blob without prior chunk requests.
+`UploadAsync` wraps this initialization-and-completion pattern:
 
 ```csharp
-BlobUploadInitializationResult init = await client.Blobs.BeginUploadAsync("myrepo");
-
 using Stream data = File.OpenRead("small-blob.bin");
+string digest = $"sha256:{Convert.ToHexString(await SHA256.HashDataAsync(data)).ToLowerInvariant()}";
+data.Position = 0;
+BlobUploadInitializationResult init = await client.Blobs.BeginUploadAsync(repository);
 BlobUploadResult result = await client.Blobs.EndUploadAsync(
-    init.Location, "sha256:abc123...", init.UploadContext, data);
+    init.Location, digest, init.UploadContext, data);
 ```
 
 ## Inspect or cancel an upload
 
-Get the server's current offset for an in-progress upload:
+`GetUploadAsync` returns the session's current ID and offset.
+`DeleteUploadAsync` cancels an in-progress session. Both take the current
+upload location:
 
 ```csharp
 BlobUpload upload = await client.Blobs.GetUploadAsync(init.Location);
 ```
 
-Cancel the upload:
+Cancellation:
 
 ```csharp
 await client.Blobs.DeleteUploadAsync(init.Location);

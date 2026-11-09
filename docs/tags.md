@@ -2,10 +2,20 @@
 
 Access tag operations via `client.Tags`.
 
-## List tags
+All snippets below use the following setup code:
 
 ```csharp
+using Valleysoft.DockerRegistryClient;
+using Valleysoft.DockerRegistryClient.Models;
+
 using RegistryClient client = new("mcr.microsoft.com");
+```
+
+## List tags
+
+`GetAsync` returns one `Page<RepositoryTags>` for a repository.
+
+```csharp
 Page<RepositoryTags> tagsPage = await client.Tags.GetAsync("dotnet/sdk");
 foreach (string tag in tagsPage.Value.Tags)
 {
@@ -15,7 +25,7 @@ foreach (string tag in tagsPage.Value.Tags)
 
 ## Limit results
 
-Pass a `count` parameter to limit the number of tags returned per page:
+`count` specifies the requested page size:
 
 ```csharp
 Page<RepositoryTags> tagsPage = await client.Tags.GetAsync("dotnet/sdk", count: 10);
@@ -23,23 +33,21 @@ Page<RepositoryTags> tagsPage = await client.Tags.GetAsync("dotnet/sdk", count: 
 
 ## Stream every tag
 
-Use `GetAllAsync` to stream tags across every page:
+`GetAllAsync` returns an `IAsyncEnumerable<string>` spanning all pages:
 
 ```csharp
-using RegistryClient client = new("mcr.microsoft.com");
-
 await foreach (string tag in client.Tags.GetAllAsync("dotnet/sdk", count: 100))
 {
     Console.WriteLine(tag);
 }
 ```
 
-The client requests each page only as the loop advances. Pass a
-`CancellationToken` to stop enumeration and any active request.
+Pages are requested as enumeration advances. The optional `CancellationToken`
+applies to enumeration and active requests.
 
 ## Process complete pages
 
-Use `GetAllPagesAsync` when page boundaries or page metadata are needed:
+`GetAllPagesAsync` returns complete pages, retaining their metadata:
 
 ```csharp
 await foreach (Page<RepositoryTags> page in
@@ -52,8 +60,8 @@ await foreach (Page<RepositoryTags> page in
 }
 ```
 
-For manual pagination, call `GetAsync`, inspect `NextPageLink`, and pass a
-non-null link to `GetNextAsync`:
+`GetNextAsync` accepts a page's `NextPageLink`. A null link marks the final
+page:
 
 ```csharp
 Page<RepositoryTags> page = await client.Tags.GetAsync(

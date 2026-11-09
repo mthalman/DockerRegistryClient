@@ -4,15 +4,34 @@ Access referrer operations via `client.Referrers`.
 
 The [OCI Referrers API](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-referrers)
 discovers artifacts that reference a given manifest digest, such as SBOMs,
-signatures, and attestations. If a registry does not implement the referrers
-endpoint, the client automatically queries the OCI referrers tag fallback.
+signatures, and attestations. When the initial referrers request returns
+`404 Not Found`, the client queries the OCI referrers tag fallback. Other
+unsuccessful responses propagate rather than triggering that fallback.
+A missing fallback tag or invalid fallback index produces an empty page with
+no continuation link.
+
+All snippets below use the following setup code:
+
+```csharp
+using Valleysoft.DockerRegistryClient;
+using Valleysoft.DockerRegistryClient.Credentials;
+using Valleysoft.DockerRegistryClient.Models.Manifests.Oci;
+
+BasicAuthenticationCredentials credentials = new("username", "password");
+using RegistryClient client = new("myregistry.example.com", credentials);
+string subjectDigest = await client.Manifests.GetDigestAsync("myrepo", "latest");
+```
+
+`subjectDigest` identifies the subject manifest, not a blob.
 
 ## Get referrers
 
+`GetAsync` returns a `Page<OciImageIndex>` of descriptors referencing the
+subject digest.
+
 ```csharp
-using RegistryClient client = new("myregistry.example.com", credentials);
 Page<OciImageIndex> referrersPage = await client.Referrers.GetAsync(
-    "myrepo", "sha256:abc123...");
+    "myrepo", subjectDigest);
 
 foreach (var manifest in referrersPage.Value.Manifests)
 {
@@ -22,37 +41,38 @@ foreach (var manifest in referrersPage.Value.Manifests)
 
 ## Filter by artifact type
 
-Pass an `artifactType` to filter results to a specific kind of artifact:
+`artifactType` filters the returned descriptors by artifact media type:
 
 ```csharp
 Page<OciImageIndex> sboms = await client.Referrers.GetAsync(
-    "myrepo", "sha256:abc123...", artifactType: "application/spdx+json");
+    "myrepo", subjectDigest, artifactType: "application/spdx+json");
 ```
 
 ## Stream every referrer
 
-Use `GetAllAsync` to stream manifest references across every page:
+`GetAllAsync` returns an `IAsyncEnumerable<ManifestReference>` spanning all
+pages:
 
 ```csharp
 await foreach (ManifestReference manifest in client.Referrers.GetAllAsync(
     "myrepo",
-    "sha256:abc123..."))
+    subjectDigest))
 {
     Console.WriteLine(manifest.Digest);
 }
 ```
 
-The client requests each page only as the loop advances. Pass a
-`CancellationToken` to stop enumeration and any active request.
+Pages are requested as enumeration advances. The optional `CancellationToken`
+applies to enumeration and active requests.
 
 ## Process complete pages
 
-Use `GetAllPagesAsync` when page boundaries or page metadata are needed:
+`GetAllPagesAsync` returns complete pages, retaining their metadata:
 
 ```csharp
 await foreach (Page<OciImageIndex> page in client.Referrers.GetAllPagesAsync(
     "myrepo",
-    "sha256:abc123..."))
+    subjectDigest))
 {
     foreach (ManifestReference manifest in page.Value.Manifests)
     {
@@ -61,13 +81,13 @@ await foreach (Page<OciImageIndex> page in client.Referrers.GetAllPagesAsync(
 }
 ```
 
-For manual pagination, call `GetAsync`, inspect `NextPageLink`, and pass a
-non-null link to `GetNextAsync`:
+`GetNextAsync` accepts a page's `NextPageLink`. A null link marks the final
+page:
 
 ```csharp
 Page<OciImageIndex> page = await client.Referrers.GetAsync(
     "myrepo",
-    "sha256:abc123...");
+    subjectDigest);
 
 while (true)
 {

@@ -11,9 +11,12 @@ A .NET client library for the [OCI Distribution Spec](https://github.com/opencon
 dotnet add package Valleysoft.DockerRegistryClient
 ```
 
-Building from source requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
+Building from source requires the .NET SDK specified in
+[global.json](https://github.com/mthalman/DockerRegistryClient/blob/main/global.json).
 
 ## List repository tags
+
+`Tags.GetAsync` returns one page of repository tags:
 
 ```csharp
 using Valleysoft.DockerRegistryClient;
@@ -48,6 +51,7 @@ All operation methods accept an optional `CancellationToken`.
 - [Copy images and artifacts](https://github.com/mthalman/DockerRegistryClient/blob/main/docs/copy.md) - Copy complete content graphs within or between registries
 - [Authentication](https://github.com/mthalman/DockerRegistryClient/blob/main/docs/authentication.md) - Configure anonymous, basic, token, or custom credentials
 - [Error handling](https://github.com/mthalman/DockerRegistryClient/blob/main/docs/error-handling.md) - Handle `RegistryException` and registry error details
+- [Migration guides](https://github.com/mthalman/DockerRegistryClient/blob/main/docs/migrations/README.md) - Review breaking changes when upgrading across releases
 - [Contributing](https://github.com/mthalman/DockerRegistryClient/blob/main/CONTRIBUTING.md)
 - [Maintainer guide](https://github.com/mthalman/DockerRegistryClient/blob/main/MAINTAINERS.md) - Review, label, and release changes
 
